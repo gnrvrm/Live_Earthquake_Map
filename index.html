@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deprem Radarı</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script defer src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="control-panel" aria-label="Deprem kontrol paneli">
+        <header class="panel-header">
+          <div class="brand-lockup">
+            <span class="brand-mark" aria-hidden="true">
+              <i data-lucide="activity"></i>
+            </span>
+            <div>
+              <p class="eyebrow">Canlı küresel izleme</p>
+              <h1>Deprem Radarı</h1>
+            </div>
+          </div>
+          <button id="refresh-button" class="icon-button" type="button" title="Yenile">
+            <i data-lucide="refresh-cw"></i>
+            <span class="sr-only">Yenile</span>
+          </button>
+        </header>
+
+        <section class="status-band" aria-live="polite">
+          <div>
+            <span class="status-dot" id="global-status-dot"></span>
+            <span id="status-summary">Veri bekleniyor</span>
+          </div>
+          <time id="last-updated" datetime="">-</time>
+        </section>
+
+        <details class="source-details" id="source-details">
+          <summary>
+            <span>Kaynak detayları</span>
+            <strong id="source-summary">8 kaynak hazır</strong>
+          </summary>
+          <section class="source-grid" aria-label="Kaynak durumları">
+            <article class="source-tile" data-source-tile="usgs">
+              <div>
+                <strong>USGS</strong>
+                <span id="source-status-usgs">Hazır</span>
+              </div>
+              <b id="source-count-usgs">0</b>
+            </article>
+            <article class="source-tile" data-source-tile="emsc">
+              <div>
+                <strong>EMSC</strong>
+                <span id="source-status-emsc">Hazır</span>
+              </div>
+              <b id="source-count-emsc">0</b>
+            </article>
+            <article class="source-tile" data-source-tile="gdacs">
+              <div>
+                <strong>GDACS</strong>
+                <span id="source-status-gdacs">Hazır</span>
+              </div>
+              <b id="source-count-gdacs">0</b>
+            </article>
+            <article class="source-tile" data-source-tile="afad">
+              <div>
+                <strong>AFAD</strong>
+                <span id="source-status-afad">Hazır</span>
+              </div>
+              <b id="source-count-afad">0</b>
+            </article>
+            <article class="source-tile" data-source-tile="kandilli">
+              <div>
+                <strong>Kandilli</strong>
+                <span id="source-status-kandilli">Hazır</span>
+              </div>
+              <b id="source-count-kandilli">0</b>
+            </article>
+            <article class="source-tile" data-source-tile="geonet">
+              <div>
+                <strong>GeoNet</strong>
+                <span id="source-status-geonet">Hazır</span>
+              </div>
+              <b id="source-count-geonet">0</b>
+            </article>
+            <article class="source-tile" data-source-tile="jma">
+              <div>
+                <strong>JMA</strong>
+                <span id="source-status-jma">Hazır</span>
+              </div>
+              <b id="source-count-jma">0</b>
+            </article>
+            <article class="source-tile" data-source-tile="bmkg">
+              <div>
+                <strong>BMKG</strong>
+                <span id="source-status-bmkg">Hazır</span>
+              </div>
+              <b id="source-count-bmkg">0</b>
+            </article>
+          </section>
+        </details>
+
+        <section class="metric-grid" aria-label="Özet">
+          <article class="metric">
+            <span>Olay</span>
+            <strong id="metric-total">0</strong>
+          </article>
+          <article class="metric">
+            <span>En büyük</span>
+            <strong id="metric-max">-</strong>
+          </article>
+          <article class="metric">
+            <span>M4.5+</span>
+            <strong id="metric-strong">0</strong>
+          </article>
+          <article class="metric">
+            <span>Ort. derinlik</span>
+            <strong id="metric-depth">-</strong>
+          </article>
+        </section>
+
+        <section class="filters" aria-label="Filtreler">
+          <div class="field-row">
+            <span class="field-label">Zaman</span>
+            <div class="segments" role="group" aria-label="Zaman aralığı">
+              <button class="segment" type="button" data-window-hours="1">1 sa</button>
+              <button class="segment" type="button" data-window-hours="6">6 sa</button>
+              <button class="segment is-active" type="button" data-window-hours="24">
+                24 sa
+              </button>
+              <button class="segment" type="button" data-window-hours="72">3 gün</button>
+            </div>
+          </div>
+
+          <label class="range-field" for="magnitude-filter">
+            <span class="field-label">Minimum büyüklük</span>
+            <output id="magnitude-value" for="magnitude-filter">M0.0+</output>
+            <input
+              id="magnitude-filter"
+              type="range"
+              min="0"
+              max="7"
+              step="0.5"
+              value="0"
+            />
+          </label>
+
+          <div class="field-row source-switches" aria-label="Kaynak filtresi">
+            <span class="field-label">Kaynak</span>
+            <label class="toggle-pill">
+              <input type="checkbox" value="usgs" checked />
+              <span>USGS</span>
+            </label>
+            <label class="toggle-pill">
+              <input type="checkbox" value="emsc" checked />
+              <span>EMSC</span>
+            </label>
+            <label class="toggle-pill">
+              <input type="checkbox" value="gdacs" checked />
+              <span>GDACS</span>
+            </label>
+            <label class="toggle-pill">
+              <input type="checkbox" value="afad" checked />
+              <span>AFAD</span>
+            </label>
+            <label class="toggle-pill">
+              <input type="checkbox" value="kandilli" checked />
+              <span>Kandilli</span>
+            </label>
+            <label class="toggle-pill">
+              <input type="checkbox" value="geonet" checked />
+              <span>GeoNet</span>
+            </label>
+            <label class="toggle-pill">
+              <input type="checkbox" value="jma" checked />
+              <span>JMA</span>
+            </label>
+            <label class="toggle-pill">
+              <input type="checkbox" value="bmkg" checked />
+              <span>BMKG</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="event-section" aria-label="Deprem olayları">
+          <div class="section-title">
+            <h2>Olay Akışı</h2>
+            <span id="visible-count">0 görünür</span>
+          </div>
+          <div id="event-list" class="event-list"></div>
+        </section>
+      </aside>
+
+      <main class="map-stage">
+        <div id="map" aria-label="Dünya deprem haritası"></div>
+        <div class="map-overlay top-left">
+          <span id="map-caption">Son 24 saatteki canlı olaylar</span>
+        </div>
+        <form id="map-search" class="map-search" role="search" aria-label="Haritada bölge ara">
+          <div class="map-search-row">
+            <i data-lucide="search" aria-hidden="true"></i>
+            <input
+              id="map-search-input"
+              type="search"
+              autocomplete="off"
+              placeholder="Bölge ara"
+              aria-label="Bölge ara"
+            />
+            <button id="map-search-submit" class="search-icon-button" type="submit" title="Ara">
+              <i data-lucide="arrow-right"></i>
+              <span class="sr-only">Ara</span>
+            </button>
+            <button
+              id="map-search-clear"
+              class="search-icon-button is-hidden"
+              type="button"
+              title="Temizle"
+            >
+              <i data-lucide="x"></i>
+              <span class="sr-only">Temizle</span>
+            </button>
+          </div>
+          <p id="map-search-status" class="map-search-status" aria-live="polite"></p>
+        </form>
+        <div class="map-overlay legend" aria-label="Büyüklük lejandı">
+          <span><i class="legend-dot mag-low"></i>M0-2.9</span>
+          <span><i class="legend-dot mag-mid"></i>M3-4.4</span>
+          <span><i class="legend-dot mag-high"></i>M4.5-5.9</span>
+          <span><i class="legend-dot mag-extreme"></i>M6+</span>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
