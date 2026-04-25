@@ -7,6 +7,8 @@ const MERGE_YIELD_INTERVAL = 180;
 const MARKER_RENDER_CHUNK_SIZE = 75;
 const MAX_MERGE_TIME_MS = 15 * 60 * 1000;
 const FETCH_FUTURE_MARGIN_MS = 60 * 60 * 1000;
+const APP_VERSION_URL = "https://api.github.com/repos/gnrvrm/Live_Earthquake_Map/commits/main";
+const APP_VERSION_OWNER = "E.Guner";
 const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
 const DEFAULT_LOCALE = "tr";
 const SUPPORTED_LOCALES = ["tr", "en"];
@@ -472,6 +474,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initResponsiveLayout();
   applyLanguage({ rerender: false });
   createIcons();
+  loadAppVersion();
   refreshEvents();
   window.setInterval(refreshEvents, REFRESH_INTERVAL_MS);
   document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -482,6 +485,7 @@ function collectElements() {
   elements.statusSummary = document.getElementById("status-summary");
   elements.statusDot = document.getElementById("global-status-dot");
   elements.lastUpdated = document.getElementById("last-updated");
+  elements.appVersion = document.getElementById("app-version");
   elements.sourceSummary = document.getElementById("source-summary");
   elements.metricTotal = document.getElementById("metric-total");
   elements.metricMax = document.getElementById("metric-max");
@@ -722,6 +726,54 @@ function createIcons() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+}
+
+async function loadAppVersion() {
+  if (!elements.appVersion) {
+    return;
+  }
+
+  try {
+    const version = await fetchJson(APP_VERSION_URL);
+    const label = formatAppVersion(version);
+    if (!label) {
+      return;
+    }
+
+    elements.appVersion.textContent = label;
+    elements.appVersion.hidden = false;
+
+    const commitDate = version?.commit?.committer?.date || version?.commit?.author?.date;
+    elements.appVersion.title = [version?.sha ? `commit ${version.sha}` : "", commitDate || ""]
+      .filter(Boolean)
+      .join(" - ");
+  } catch (error) {
+    elements.appVersion.hidden = true;
+  }
+}
+
+function formatAppVersion(version) {
+  const commitDate = version?.commit?.committer?.date || version?.commit?.author?.date;
+  const versionDate = formatVersionDate(commitDate);
+  const shortSha = typeof version?.sha === "string" ? version.sha.slice(0, 7) : "";
+
+  if (!versionDate && !shortSha) {
+    return "";
+  }
+
+  return [versionDate ? `v${versionDate}` : "", shortSha, APP_VERSION_OWNER].filter(Boolean).join(" - ");
+}
+
+function formatVersionDate(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}.${month}.${day}`;
 }
 
 function yieldToBrowser() {
@@ -1809,6 +1861,7 @@ function updateLastUpdatedDisplay() {
 
   elements.lastUpdated.textContent = new Intl.DateTimeFormat(currentLocaleConfig().dateLocale, {
     hour: "2-digit",
+    hourCycle: "h23",
     minute: "2-digit",
   }).format(new Date(timestamp));
 }
