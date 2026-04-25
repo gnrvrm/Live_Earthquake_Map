@@ -3,6 +3,10 @@ const FETCH_TIMEOUT_MS = 18 * 1000;
 const MAX_HISTORY_HOURS = 168;
 const FETCH_LOOKBACK_HOURS = MAX_HISTORY_HOURS + 2;
 const MAX_EVENT_LIST_ITEMS = 180;
+const MERGE_YIELD_INTERVAL = 180;
+const MARKER_RENDER_CHUNK_SIZE = 75;
+const MAX_MERGE_TIME_MS = 15 * 60 * 1000;
+const FETCH_FUTURE_MARGIN_MS = 60 * 60 * 1000;
 const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
 const DEFAULT_LOCALE = "tr";
 const SUPPORTED_LOCALES = ["tr", "en"];
@@ -435,8 +439,10 @@ const state = {
   locale: DEFAULT_LOCALE,
   map: null,
   markerLayer: null,
+  markerRenderer: null,
   searchMarker: null,
   searchToken: 0,
+  renderToken: 0,
   markerRefs: new Map(),
   reports: [],
   events: [],
@@ -559,9 +565,7 @@ function applyLanguage(options = {}) {
   updateLastUpdatedDisplay();
 
   if (rerender && state.markerLayer) {
-    renderMetrics();
-    renderMarkers();
-    renderList();
+    void applyFiltersAndRender({ chunked: true });
   }
 }
 
@@ -619,8 +623,10 @@ function updateEmptyMessage() {
 }
 
 function initMap() {
+  state.markerRenderer = L.canvas({ padding: 0.5 });
   state.map = L.map("map", {
     zoomControl: false,
+    preferCanvas: true,
     worldCopyJump: true,
   }).setView([22, 12], 2);
 
@@ -650,20 +656,20 @@ function initControls() {
     button.addEventListener("click", () => {
       state.filters.windowHours = Number(button.dataset.windowHours);
       elements.segmentButtons.forEach((item) => item.classList.toggle("is-active", item === button));
-      applyFiltersAndRender();
+      void applyFiltersAndRender();
     });
   });
 
   elements.magnitudeFilter?.addEventListener("input", () => {
     state.filters.minMagnitude = Number(elements.magnitudeFilter.value);
     updateMagnitudeLabel();
-    applyFiltersAndRender();
+    void applyFiltersAndRender();
   });
 
   elements.sourceInputs.forEach((input) => {
     input.addEventListener("change", () => {
       state.filters.sources[input.value] = input.checked;
-      applyFiltersAndRender();
+      void applyFiltersAndRender();
     });
   });
 }
@@ -716,6 +722,17 @@ function createIcons() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+}
+
+function yieldToBrowser() {
+  return new Promise((resolve) => {
+    if (document.visibilityState === "hidden") {
+      window.setTimeout(resolve, 0);
+      return;
+    }
+
+    window.requestAnimationFrame(() => window.setTimeout(resolve, 0));
+  });
 }
 
 async function handleMapSearchSubmit(event) {
@@ -886,6 +903,7 @@ async function refreshEvents(options = {}) {
   updateGlobalStatus("status.refreshing", "loading");
 
   Object.keys(DATA_SOURCES).forEach((key) => updateSourceStatus(key, "fetching", 0, "loading"));
+  await yieldToBrowser();
 
   try {
     const sourceResults = await Promise.allSettled(
@@ -899,13 +917,13 @@ async function refreshEvents(options = {}) {
 
     if (reports.length) {
       state.reports = reports;
-      state.events = combineReports(reports);
+      state.events = await combineReports(reports);
       state.hasLoadedOnce = true;
     }
 
     const failedCount = sourceResults.filter((result) => result.status === "rejected").length;
     const liveCount = Object.keys(DATA_SOURCES).length - failedCount;
-    applyFiltersAndRender();
+    await applyFiltersAndRender({ chunked: true });
 
     const statusPayload = buildGlobalStatusText({ failedCount, liveCount });
     updateGlobalStatus(statusPayload.key, failedCount > 0 ? "warning" : "live", statusPayload.params);
@@ -936,7 +954,10 @@ async function fetchSource(key, source) {
       throw settledPayloads.find((result) => result.status === "rejected")?.reason || new Error("Kaynak yanıt vermedi.");
     }
 
-    const reports = source.normalize(payloads.length === 1 ? payloads[0] : payloads).filter(isUsableReport);
+    const now = Date.now();
+    const reports = source
+      .normalize(payloads.length === 1 ? payloads[0] : payloads)
+      .filter((report) => isUsableReport(report) && isWithinFetchWindow(report, now));
     updateSourceStatus(key, "live", reports.length, "live");
     return reports;
   } catch (error) {
@@ -1239,22 +1260,98 @@ function normalizeBmkg(payloads) {
     });
 }
 
-function combineReports(reports) {
+async function combineReports(reports) {
   const sortedReports = reports
     .filter(isUsableReport)
     .sort((a, b) => (b.time || 0) - (a.time || 0));
   const events = [];
+  const mergeIndexes = {
+    eventBySourceId: new Map(),
+    eventBucketKeys: new Map(),
+    timeBuckets: new Map(),
+  };
 
-  sortedReports.forEach((report) => {
-    const match = events.find((event) => appearsToBeSameEvent(report, event));
+  for (let index = 0; index < sortedReports.length; index += 1) {
+    const report = sortedReports[index];
+    const match = findMergeMatch(report, mergeIndexes);
     if (match) {
       mergeReportIntoEvent(match, report);
+      indexMergedEvent(match, mergeIndexes);
     } else {
-      events.push(createEventFromReport(report));
+      const event = createEventFromReport(report);
+      events.push(event);
+      indexMergedEvent(event, mergeIndexes);
+    }
+
+    if (index > 0 && index % MERGE_YIELD_INTERVAL === 0) {
+      await yieldToBrowser();
+    }
+  }
+
+  return events.sort((a, b) => (b.time || 0) - (a.time || 0));
+}
+
+function findMergeMatch(report, indexes) {
+  const directMatch = indexes.eventBySourceId.get(sourceReportKey(report));
+  if (directMatch) {
+    return directMatch;
+  }
+
+  return Array.from(getMergeCandidates(report, indexes.timeBuckets)).find(
+    (event) => isPossibleMergeCandidate(report, event) && appearsToBeSameEvent(report, event)
+  );
+}
+
+function getMergeCandidates(report, timeBuckets) {
+  const candidates = new Set();
+  const bucketKey = mergeBucketKey(report.time);
+
+  for (let offset = -1; offset <= 1; offset += 1) {
+    const bucketEvents = timeBuckets.get(bucketKey + offset);
+    if (bucketEvents) {
+      bucketEvents.forEach((event) => candidates.add(event));
+    }
+  }
+
+  return candidates;
+}
+
+function indexMergedEvent(event, indexes) {
+  const previousKeys = indexes.eventBucketKeys.get(event) || [];
+  previousKeys.forEach((key) => {
+    const bucket = indexes.timeBuckets.get(key);
+    bucket?.delete(event);
+    if (bucket && bucket.size === 0) {
+      indexes.timeBuckets.delete(key);
     }
   });
 
-  return events.sort((a, b) => (b.time || 0) - (a.time || 0));
+  const nextKeys = unique(event.reports.map((report) => mergeBucketKey(report.time)));
+  indexes.eventBucketKeys.set(event, nextKeys);
+  nextKeys.forEach((key) => {
+    if (!indexes.timeBuckets.has(key)) {
+      indexes.timeBuckets.set(key, new Set());
+    }
+    indexes.timeBuckets.get(key).add(event);
+  });
+
+  event.sourceIds.forEach((sourceId) => indexes.eventBySourceId.set(sourceId, event));
+}
+
+function mergeBucketKey(time) {
+  return Math.floor((time || 0) / MAX_MERGE_TIME_MS);
+}
+
+function isPossibleMergeCandidate(report, event) {
+  const reportKey = sourceReportKey(report);
+  if (event.sourceIds.includes(reportKey)) {
+    return true;
+  }
+
+  const time = report.time || 0;
+  const eventStart = event.time || 0;
+  const eventEnd = event.latestTime || event.time || 0;
+  return time >= eventStart - MAX_MERGE_TIME_MS && time <= eventEnd + MAX_MERGE_TIME_MS;
 }
 
 function appearsToBeSameEvent(report, event) {
@@ -1363,7 +1460,9 @@ function refreshMergedEvent(event) {
   event.magnitudeMax = magnitudes.length ? Math.max(...magnitudes) : undefined;
   event.magnitudeType = primary.magnitudeType;
   event.place = primary.place;
-  event.time = Math.min(...event.reports.map((report) => report.time).filter(Number.isFinite));
+  const reportTimes = event.reports.map((report) => report.time).filter(Number.isFinite);
+  event.time = Math.min(...reportTimes);
+  event.latestTime = Math.max(...reportTimes);
   event.updated = Math.max(...event.reports.map((report) => report.updated || report.time).filter(Number.isFinite));
   event.url = primary.url;
   event.tsunami = event.reports.some((report) => report.tsunami);
@@ -1404,7 +1503,16 @@ function isUsableReport(report) {
   );
 }
 
-function applyFiltersAndRender() {
+function isWithinFetchWindow(report, now = Date.now()) {
+  return (
+    report.time >= now - FETCH_LOOKBACK_HOURS * 60 * 60 * 1000 &&
+    report.time <= now + FETCH_FUTURE_MARGIN_MS
+  );
+}
+
+async function applyFiltersAndRender(options = {}) {
+  const { chunked = true } = options;
+  const token = ++state.renderToken;
   const minTime = Date.now() - state.filters.windowHours * 60 * 60 * 1000;
   updateFilterSummary();
   state.filteredEvents = state.events
@@ -1418,7 +1526,11 @@ function applyFiltersAndRender() {
 
   renderSourceCounts(minTime);
   renderMetrics();
-  renderMarkers();
+  const didRenderMarkers = await renderMarkers({ chunked, token });
+  if (!didRenderMarkers || token !== state.renderToken) {
+    return;
+  }
+
   renderList();
   updateMapCaption();
 }
@@ -1461,11 +1573,17 @@ function renderMetrics() {
   elements.visibleCount.textContent = t("events.visibleCount", { count: total });
 }
 
-function renderMarkers() {
+async function renderMarkers(options = {}) {
+  const { chunked = false, token = state.renderToken } = options;
   state.markerLayer.clearLayers();
   state.markerRefs.clear();
 
-  state.filteredEvents.forEach((event) => {
+  for (let index = 0; index < state.filteredEvents.length; index += 1) {
+    if (token !== state.renderToken) {
+      return false;
+    }
+
+    const event = state.filteredEvents[index];
     const marker = L.circleMarker([event.lat, event.lon], {
       radius: markerRadius(event.magnitude),
       color: markerColor(event.magnitude),
@@ -1473,9 +1591,10 @@ function renderMarkers() {
       fillOpacity: 0.78,
       opacity: 0.94,
       weight: event.sourceKeys.length > 1 ? 3 : 2,
+      renderer: state.markerRenderer,
     });
 
-    marker.bindPopup(popupHtml(event), {
+    marker.bindPopup(() => popupHtml(event), {
       maxWidth: 440,
       minWidth: 280,
       className: "quake-popup-wrapper",
@@ -1486,7 +1605,13 @@ function renderMarkers() {
     });
     marker.addTo(state.markerLayer);
     state.markerRefs.set(event.id, marker);
-  });
+
+    if (chunked && index > 0 && index % MARKER_RENDER_CHUNK_SIZE === 0) {
+      await yieldToBrowser();
+    }
+  }
+
+  return true;
 }
 
 function renderList() {
