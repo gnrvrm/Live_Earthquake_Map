@@ -1220,7 +1220,7 @@ function buildGlobalStatusText({ failedCount, liveCount }) {
     return `${liveCount}/${health.total} kaynak canlı · ${rawText} · ${failedCount} hata`;
   }
 
-  return `${liveCount}/${health.total} kaynak canlı · ${rawText} · 1 dk otomatik`;
+  return `${liveCount}/${health.total} kaynak canlı · ${rawText}`;
 }
 
 function getSourceHealth() {
