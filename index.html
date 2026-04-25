@@ -15,21 +15,49 @@
   </head>
   <body>
     <div class="app-shell">
-      <aside class="control-panel" aria-label="Deprem kontrol paneli">
+      <aside class="control-panel" aria-label="Deprem kontrol paneli" data-i18n-aria-label="controlPanel.aria">
         <header class="panel-header">
           <div class="brand-lockup">
             <span class="brand-mark" aria-hidden="true">
               <i data-lucide="activity"></i>
             </span>
             <div>
-              <p class="eyebrow">Canlı küresel izleme</p>
-              <h1>Deprem Radarı</h1>
+              <p class="eyebrow" data-i18n="brand.eyebrow">Canlı küresel izleme</p>
+              <h1 data-i18n="site.title">Deprem Radarı</h1>
             </div>
           </div>
-          <button id="refresh-button" class="icon-button" type="button" title="Yenile">
-            <i data-lucide="refresh-cw"></i>
-            <span class="sr-only">Yenile</span>
-          </button>
+          <div class="header-actions">
+            <div class="language-switch" role="group" aria-label="Dil seçimi" data-i18n-aria-label="languageSwitch.aria">
+              <button
+                class="lang-button is-active"
+                type="button"
+                data-locale="tr"
+                aria-pressed="true"
+                aria-label="Türkçe"
+                title="Türkçe"
+                data-i18n-aria-label="language.tr"
+                data-i18n-title="language.tr"
+              >
+                TR
+              </button>
+              <button
+                class="lang-button"
+                type="button"
+                data-locale="en"
+                aria-pressed="false"
+                aria-label="English"
+                title="English"
+                data-i18n-aria-label="language.en"
+                data-i18n-title="language.en"
+              >
+                EN
+              </button>
+            </div>
+            <button id="refresh-button" class="icon-button" type="button" title="Yenile" data-i18n-title="actions.refresh">
+              <i data-lucide="refresh-cw"></i>
+              <span class="sr-only" data-i18n="actions.refresh">Yenile</span>
+            </button>
+          </div>
         </header>
 
         <section class="status-band" aria-live="polite">
@@ -42,10 +70,10 @@
 
         <details class="source-details" id="source-details">
           <summary>
-            <span>Kaynak detayları</span>
+            <span data-i18n="sources.details">Kaynak detayları</span>
             <strong id="source-summary">8 kaynak hazır</strong>
           </summary>
-          <section class="source-grid" aria-label="Kaynak durumları">
+          <section class="source-grid" aria-label="Kaynak durumları" data-i18n-aria-label="sources.statusesAria">
             <article class="source-tile" data-source-tile="usgs">
               <div>
                 <strong>USGS</strong>
@@ -105,13 +133,13 @@
           </section>
         </details>
 
-        <section class="metric-grid" aria-label="Özet">
+        <section class="metric-grid" aria-label="Özet" data-i18n-aria-label="metrics.aria">
           <article class="metric">
-            <span>Olay</span>
+            <span data-i18n="metrics.events">Olay</span>
             <strong id="metric-total">0</strong>
           </article>
           <article class="metric">
-            <span>En büyük</span>
+            <span data-i18n="metrics.largest">En büyük</span>
             <strong id="metric-max">-</strong>
           </article>
           <article class="metric">
@@ -119,26 +147,27 @@
             <strong id="metric-strong">0</strong>
           </article>
           <article class="metric">
-            <span>Ort. derinlik</span>
+            <span data-i18n="metrics.avgDepth">Ort. derinlik</span>
             <strong id="metric-depth">-</strong>
           </article>
         </section>
 
-        <section class="filters" aria-label="Filtreler">
+        <section class="filters" aria-label="Filtreler" data-i18n-aria-label="filters.aria">
           <div class="field-row">
-            <span class="field-label">Zaman</span>
-            <div class="segments" role="group" aria-label="Zaman aralığı">
+            <span class="field-label" data-i18n="filters.time">Zaman</span>
+            <div class="segments" role="group" aria-label="Zaman aralığı" data-i18n-aria-label="filters.timeRangeAria">
               <button class="segment" type="button" data-window-hours="1">1 sa</button>
               <button class="segment" type="button" data-window-hours="6">6 sa</button>
               <button class="segment is-active" type="button" data-window-hours="24">
                 24 sa
               </button>
               <button class="segment" type="button" data-window-hours="72">3 gün</button>
+              <button class="segment" type="button" data-window-hours="168">7 gün</button>
             </div>
           </div>
 
           <label class="range-field" for="magnitude-filter">
-            <span class="field-label">Minimum büyüklük</span>
+            <span class="field-label" data-i18n="filters.minMagnitude">Minimum büyüklük</span>
             <output id="magnitude-value" for="magnitude-filter">M0.0+</output>
             <input
               id="magnitude-filter"
@@ -150,8 +179,8 @@
             />
           </label>
 
-          <div class="field-row source-switches" aria-label="Kaynak filtresi">
-            <span class="field-label">Kaynak</span>
+          <div class="field-row source-switches" aria-label="Kaynak filtresi" data-i18n-aria-label="filters.sourceAria">
+            <span class="field-label" data-i18n="filters.source">Kaynak</span>
             <label class="toggle-pill">
               <input type="checkbox" value="usgs" checked />
               <span>USGS</span>
@@ -187,21 +216,21 @@
           </div>
         </section>
 
-        <section class="event-section" aria-label="Deprem olayları">
+        <section class="event-section" aria-label="Deprem olayları" data-i18n-aria-label="events.aria">
           <div class="section-title">
-            <h2>Olay Akışı</h2>
+            <h2 data-i18n="events.feed">Olay Akışı</h2>
             <span id="visible-count">0 görünür</span>
           </div>
-          <div id="event-list" class="event-list"></div>
+          <div id="event-list" class="event-list" data-empty-message="Görüntülenecek olay yok"></div>
         </section>
       </aside>
 
       <main class="map-stage">
-        <div id="map" aria-label="Dünya deprem haritası"></div>
+        <div id="map" aria-label="Dünya deprem haritası" data-i18n-aria-label="map.aria"></div>
         <div class="map-overlay top-left">
           <span id="map-caption">Son 24 saatteki canlı olaylar</span>
         </div>
-        <form id="map-search" class="map-search" role="search" aria-label="Haritada bölge ara">
+        <form id="map-search" class="map-search" role="search" aria-label="Haritada bölge ara" data-i18n-aria-label="search.aria">
           <div class="map-search-row">
             <i data-lucide="search" aria-hidden="true"></i>
             <input
@@ -210,24 +239,27 @@
               autocomplete="off"
               placeholder="Bölge ara"
               aria-label="Bölge ara"
+              data-i18n-placeholder="search.placeholder"
+              data-i18n-aria-label="search.placeholder"
             />
-            <button id="map-search-submit" class="search-icon-button" type="submit" title="Ara">
+            <button id="map-search-submit" class="search-icon-button" type="submit" title="Ara" data-i18n-title="search.submit">
               <i data-lucide="arrow-right"></i>
-              <span class="sr-only">Ara</span>
+              <span class="sr-only" data-i18n="search.submit">Ara</span>
             </button>
             <button
               id="map-search-clear"
               class="search-icon-button is-hidden"
               type="button"
               title="Temizle"
+              data-i18n-title="search.clear"
             >
               <i data-lucide="x"></i>
-              <span class="sr-only">Temizle</span>
+              <span class="sr-only" data-i18n="search.clear">Temizle</span>
             </button>
           </div>
           <p id="map-search-status" class="map-search-status" aria-live="polite"></p>
         </form>
-        <div class="map-overlay legend" aria-label="Büyüklük lejandı">
+        <div class="map-overlay legend" aria-label="Büyüklük lejandı" data-i18n-aria-label="legend.aria">
           <span><i class="legend-dot mag-low"></i>M0-2.9</span>
           <span><i class="legend-dot mag-mid"></i>M3-4.4</span>
           <span><i class="legend-dot mag-high"></i>M4.5-5.9</span>

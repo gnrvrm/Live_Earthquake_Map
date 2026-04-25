@@ -79,6 +79,13 @@ button {
   gap: 14px;
 }
 
+.header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .brand-lockup {
   display: flex;
   align-items: center;
@@ -139,13 +146,48 @@ h2 {
   cursor: pointer;
 }
 
+.language-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(34px, 1fr));
+  gap: 2px;
+  min-height: 42px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.lang-button {
+  min-width: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.lang-button:hover {
+  color: var(--text);
+}
+
+.lang-button.is-active {
+  background: var(--text);
+  color: #fff;
+}
+
 .icon-button:hover,
+.lang-button:hover,
 .segment:hover,
 .event-card:hover {
   border-color: var(--line-strong);
 }
 
 .icon-button:focus-visible,
+.lang-button:focus-visible,
 .segment:focus-visible,
 .toggle-pill input:focus-visible + span,
 .event-card:focus-visible {
@@ -363,7 +405,7 @@ h2 {
 
 .segments {
   display: inline-grid;
-  grid-template-columns: repeat(4, minmax(50px, 1fr));
+  grid-template-columns: repeat(5, minmax(48px, 1fr));
   gap: 4px;
   padding: 4px;
   background: #e6ecef;
@@ -462,7 +504,7 @@ h2 {
 }
 
 .event-list:empty::before {
-  content: "Görüntülenecek olay yok";
+  content: attr(data-empty-message);
   display: block;
   padding: 18px 14px;
   color: var(--muted);
@@ -953,11 +995,50 @@ h2 {
 
   .panel-header {
     align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .brand-lockup {
+    flex: 1 1 auto;
+    gap: 10px;
+  }
+
+  .brand-lockup > div {
+    min-width: 0;
+  }
+
+  h1 {
+    font-size: 1.42rem;
+    line-height: 1.06;
+  }
+
+  .header-actions {
+    gap: 6px;
+    justify-content: flex-end;
+    width: 100%;
   }
 
   .brand-mark {
     width: 38px;
     height: 38px;
+  }
+
+  .icon-button {
+    width: 38px;
+    height: 38px;
+  }
+
+  .language-switch {
+    grid-template-columns: repeat(2, minmax(30px, 1fr));
+    min-height: 38px;
+    padding: 2px;
+  }
+
+  .lang-button {
+    min-width: 30px;
+    padding: 0 6px;
+    font-size: 0.72rem;
   }
 
   .status-band,

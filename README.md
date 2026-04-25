@@ -12,7 +12,7 @@ https://gnrvrm.github.io/Live_Earthquake_Map/
 - Duplicate event merging across sources
 - Source-by-source event details in map popups
 - Auto refresh every minute
-- Time filters up to the last 3 days
+- Time filters up to the last 7 days
 - Region search and map zoom
 - Turkish interface and localized event direction text
 

@@ -1,10 +1,206 @@
 const REFRESH_INTERVAL_MS = 60 * 1000;
 const FETCH_TIMEOUT_MS = 18 * 1000;
-const MAX_HISTORY_HOURS = 72;
+const MAX_HISTORY_HOURS = 168;
 const FETCH_LOOKBACK_HOURS = MAX_HISTORY_HOURS + 2;
 const MAX_EVENT_LIST_ITEMS = 180;
 const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
-const INTEGER_FORMATTER = new Intl.NumberFormat("tr-TR");
+const DEFAULT_LOCALE = "tr";
+const SUPPORTED_LOCALES = ["tr", "en"];
+const LOCALE_STORAGE_KEY = "earthquake-map-locale";
+const LOCALE_CONFIG = {
+  tr: {
+    htmlLang: "tr",
+    dateLocale: "tr-TR",
+    geocodeLanguage: "tr",
+  },
+  en: {
+    htmlLang: "en",
+    dateLocale: "en-US",
+    geocodeLanguage: "en",
+  },
+};
+
+const TRANSLATIONS = {
+  tr: {
+    "site.title": "Deprem Radarı",
+    "controlPanel.aria": "Deprem kontrol paneli",
+    "brand.eyebrow": "Canlı küresel izleme",
+    "languageSwitch.aria": "Dil seçimi",
+    "language.tr": "Türkçe",
+    "language.en": "English",
+    "actions.refresh": "Yenile",
+    "status.waiting": "Veri bekleniyor",
+    "status.refreshing": "Kaynaklar güncelleniyor",
+    "status.noReadableData": "Kaynaklardan okunabilir deprem kaydı gelmedi.",
+    "status.fetchFailed": "Veri alınamadı, son başarılı görünüm korunuyor",
+    "status.sourcesOffline": "Kaynaklar şu an yanıt vermiyor.",
+    "status.sourcesLive": ({ liveCount, total, rawCount }) =>
+      `${liveCount}/${total} kaynak canlı · ${formatInteger(rawCount)} ham kayıt`,
+    "status.sourcesWithErrors": ({ liveCount, total, rawCount, failedCount }) =>
+      `${liveCount}/${total} kaynak canlı · ${formatInteger(rawCount)} ham kayıt · ${failedCount} hata`,
+    "sources.details": "Kaynak detayları",
+    "sources.statusesAria": "Kaynak durumları",
+    "sources.summary": ({ live, total, loading, error, rawCount }) =>
+      `${live}/${total} canlı${loading ? " · güncelleniyor" : ""}${error ? ` · ${error} hata` : ""} · ${formatInteger(
+        rawCount
+      )} ham kayıt`,
+    "sourceStatus.ready": "Hazır",
+    "sourceStatus.fetching": "Çekiliyor",
+    "sourceStatus.live": "Canlı",
+    "sourceStatus.error": "Hata",
+    "metrics.aria": "Özet",
+    "metrics.events": "Olay",
+    "metrics.largest": "En büyük",
+    "metrics.avgDepth": "Ort. derinlik",
+    "filters.aria": "Filtreler",
+    "filters.time": "Zaman",
+    "filters.timeRangeAria": "Zaman aralığı",
+    "filters.minMagnitude": "Minimum büyüklük",
+    "filters.source": "Kaynak",
+    "filters.sourceAria": "Kaynak filtresi",
+    "events.aria": "Deprem olayları",
+    "events.feed": "Olay Akışı",
+    "events.visibleCount": ({ count }) => `${count} görünür`,
+    "events.empty": "Görüntülenecek olay yok",
+    "map.aria": "Dünya deprem haritası",
+    "map.caption": ({ windowLabel, sourceCount }) => `Son ${windowLabel} ${sourceCount} kaynak seçili`,
+    "search.aria": "Haritada bölge ara",
+    "search.placeholder": "Bölge ara",
+    "search.submit": "Ara",
+    "search.clear": "Temizle",
+    "search.tooShort": "En az 2 karakter girin.",
+    "search.loading": "Aranıyor...",
+    "search.noResult": "Sonuç bulunamadı.",
+    "search.failed": "Arama şu an tamamlanamadı.",
+    "search.resultFallback": "Arama sonucu",
+    "legend.aria": "Büyüklük lejandı",
+    "window.short.hour": ({ hours }) => `${hours} sa`,
+    "window.short.day": ({ days }) => `${days} gün`,
+    "window.label.hour": ({ hours }) => `${hours} saatte`,
+    "window.label.day": ({ days }) => `${days} günde`,
+    "place.unknown": "Konum belirtilmedi",
+    "place.newZealandRegion": "Yeni Zelanda bölgesi",
+    "place.japanRegion": "Japonya bölgesi",
+    "place.indonesiaRegion": "Endonezya bölgesi",
+    "place.near": ({ place }) => `${place} yakınları`,
+    "place.offshore": ({ place }) => `${place} açıkları`,
+    "place.coast": ({ place, direction }) => `${place} ${direction} kıyısı`,
+    "depth.none": "Derinlik yok",
+    "time.minutesAgo": ({ count }) => `${count} dk önce`,
+    "time.hoursAgo": ({ count }) => `${count} sa önce`,
+    "popup.magnitude": "Büyüklük",
+    "popup.time": "Zaman",
+    "popup.depth": "Derinlik",
+    "popup.coordinates": "Koordinat",
+    "popup.source": "Kaynak",
+    "popup.intensity": "Şiddet",
+    "popup.tsunami": "Tsunami uyarısı veya potansiyeli bildirildi",
+    "popup.gdacsAlert": ({ level }) => `GDACS alarm seviyesi: ${level}`,
+    "popup.sourceRecord": "Kaynak kaydı",
+    "report.record": "kayıt",
+    "reportStatus.updated": "güncellendi",
+    "reportStatus.initial": "ilk kayıt",
+  },
+  en: {
+    "site.title": "Earthquake Radar",
+    "controlPanel.aria": "Earthquake control panel",
+    "brand.eyebrow": "Live global monitoring",
+    "languageSwitch.aria": "Language selection",
+    "language.tr": "Türkçe",
+    "language.en": "English",
+    "actions.refresh": "Refresh",
+    "status.waiting": "Waiting for data",
+    "status.refreshing": "Updating sources",
+    "status.noReadableData": "No readable earthquake records came from the sources.",
+    "status.fetchFailed": "Data could not be loaded; keeping the last successful view",
+    "status.sourcesOffline": "Sources are not responding right now.",
+    "status.sourcesLive": ({ liveCount, total, rawCount }) =>
+      `${liveCount}/${total} sources live · ${formatInteger(rawCount)} raw records`,
+    "status.sourcesWithErrors": ({ liveCount, total, rawCount, failedCount }) =>
+      `${liveCount}/${total} sources live · ${formatInteger(rawCount)} raw records · ${failedCount} errors`,
+    "sources.details": "Source details",
+    "sources.statusesAria": "Source statuses",
+    "sources.summary": ({ live, total, loading, error, rawCount }) =>
+      `${live}/${total} live${loading ? " · updating" : ""}${error ? ` · ${error} errors` : ""} · ${formatInteger(
+        rawCount
+      )} raw records`,
+    "sourceStatus.ready": "Ready",
+    "sourceStatus.fetching": "Fetching",
+    "sourceStatus.live": "Live",
+    "sourceStatus.error": "Error",
+    "metrics.aria": "Summary",
+    "metrics.events": "Events",
+    "metrics.largest": "Largest",
+    "metrics.avgDepth": "Avg. depth",
+    "filters.aria": "Filters",
+    "filters.time": "Time",
+    "filters.timeRangeAria": "Time range",
+    "filters.minMagnitude": "Minimum magnitude",
+    "filters.source": "Source",
+    "filters.sourceAria": "Source filter",
+    "events.aria": "Earthquake events",
+    "events.feed": "Event Feed",
+    "events.visibleCount": ({ count }) => `${count} visible`,
+    "events.empty": "No events to display",
+    "map.aria": "World earthquake map",
+    "map.caption": ({ windowLabel, sourceCount }) =>
+      `Last ${windowLabel} · ${sourceCount} ${sourceCount === 1 ? "source" : "sources"} selected`,
+    "search.aria": "Search a region on the map",
+    "search.placeholder": "Search region",
+    "search.submit": "Search",
+    "search.clear": "Clear",
+    "search.tooShort": "Enter at least 2 characters.",
+    "search.loading": "Searching...",
+    "search.noResult": "No result found.",
+    "search.failed": "Search could not be completed right now.",
+    "search.resultFallback": "Search result",
+    "legend.aria": "Magnitude legend",
+    "window.short.hour": ({ hours }) => `${hours} hr`,
+    "window.short.day": ({ days }) => `${days} days`,
+    "window.label.hour": ({ hours }) => `${hours} ${hours === 1 ? "hour" : "hours"}`,
+    "window.label.day": ({ days }) => `${days} ${days === 1 ? "day" : "days"}`,
+    "place.unknown": "Location unavailable",
+    "place.newZealandRegion": "New Zealand region",
+    "place.japanRegion": "Japan region",
+    "place.indonesiaRegion": "Indonesia region",
+    "place.near": ({ place }) => `near ${place}`,
+    "place.offshore": ({ place }) => `offshore ${place}`,
+    "place.coast": ({ place, direction }) => `${direction} coast of ${place}`,
+    "depth.none": "No depth",
+    "time.minutesAgo": ({ count }) => `${count} min ago`,
+    "time.hoursAgo": ({ count }) => `${count} hr ago`,
+    "popup.magnitude": "Magnitude",
+    "popup.time": "Time",
+    "popup.depth": "Depth",
+    "popup.coordinates": "Coordinates",
+    "popup.source": "Source",
+    "popup.intensity": "Intensity",
+    "popup.tsunami": "Tsunami warning or potential reported",
+    "popup.gdacsAlert": ({ level }) => `GDACS alert level: ${level}`,
+    "popup.sourceRecord": "Source record",
+    "report.record": "record",
+    "reportStatus.updated": "updated",
+    "reportStatus.initial": "initial report",
+  },
+};
+
+const ATTRIBUTE_LABELS = {
+  "önem": { tr: "önem", en: "importance" },
+  "hissedilme": { tr: "hissedilme", en: "felt" },
+  "yazar": { tr: "yazar", en: "author" },
+  "kalite": { tr: "kalite", en: "quality" },
+  "olay": { tr: "olay", en: "event" },
+  "kaynak": { tr: "kaynak", en: "source" },
+  "açıklama": { tr: "açıklama", en: "description" },
+  "il": { tr: "il", en: "province" },
+  "ilçe": { tr: "ilçe", en: "district" },
+  "mahalle": { tr: "mahalle", en: "neighborhood" },
+  "şiddet": { tr: "şiddet", en: "intensity" },
+  "başlık": { tr: "başlık", en: "title" },
+  "potansiyel": { tr: "potansiyel", en: "potential" },
+  "hissedilen": { tr: "hissedilen", en: "felt" },
+  "saat": { tr: "saat", en: "time" },
+};
 
 const DIRECTION_LABELS = {
   n: "kuzeyinde",
@@ -166,7 +362,7 @@ const DATA_SOURCES = {
     shortLabel: "EMSC",
     format: "json",
     url: () =>
-      `https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=2200&orderby=time&start=${encodeURIComponent(
+      `https://www.seismicportal.eu/fdsnws/event/1/query?format=json&limit=8000&orderby=time&start=${encodeURIComponent(
         new Date(Date.now() - FETCH_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString().replace(".000Z", "")
       )}`,
     normalize: normalizeEmsc,
@@ -231,6 +427,7 @@ const DATA_SOURCES = {
 };
 
 const state = {
+  locale: DEFAULT_LOCALE,
   map: null,
   markerLayer: null,
   searchMarker: null,
@@ -240,8 +437,10 @@ const state = {
   events: [],
   filteredEvents: [],
   sourceStats: Object.fromEntries(
-    Object.keys(DATA_SOURCES).map((key) => [key, { status: "Hazır", count: 0, mode: "idle" }])
+    Object.keys(DATA_SOURCES).map((key) => [key, { statusKey: "ready", count: 0, mode: "idle" }])
   ),
+  globalStatus: { key: "status.waiting", params: {}, mode: "idle" },
+  mapSearchStatus: { message: "", params: {}, mode: "idle" },
   selectedId: null,
   hasLoadedOnce: false,
   isRefreshing: false,
@@ -256,8 +455,10 @@ const elements = {};
 
 document.addEventListener("DOMContentLoaded", () => {
   collectElements();
+  initLanguage();
   initMap();
   initControls();
+  applyLanguage({ rerender: false });
   createIcons();
   refreshEvents();
   window.setInterval(refreshEvents, REFRESH_INTERVAL_MS);
@@ -284,6 +485,7 @@ function collectElements() {
   elements.mapSearchSubmit = document.getElementById("map-search-submit");
   elements.mapSearchClear = document.getElementById("map-search-clear");
   elements.mapSearchStatus = document.getElementById("map-search-status");
+  elements.languageButtons = Array.from(document.querySelectorAll("[data-locale]"));
   elements.segmentButtons = Array.from(document.querySelectorAll("[data-window-hours]"));
   elements.sourceInputs = Array.from(document.querySelectorAll(".toggle-pill input"));
   elements.sourceTiles = {};
@@ -295,6 +497,104 @@ function collectElements() {
     elements.sourceStatus[key] = document.getElementById(`source-status-${key}`);
     elements.sourceCount[key] = document.getElementById(`source-count-${key}`);
   });
+}
+
+function initLanguage() {
+  const savedLocale = window.localStorage?.getItem(LOCALE_STORAGE_KEY);
+  state.locale = SUPPORTED_LOCALES.includes(savedLocale) ? savedLocale : DEFAULT_LOCALE;
+}
+
+function setLanguage(locale) {
+  if (!SUPPORTED_LOCALES.includes(locale) || locale === state.locale) {
+    return;
+  }
+
+  state.locale = locale;
+  window.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
+  applyLanguage();
+}
+
+function applyLanguage(options = {}) {
+  const { rerender = true } = options;
+  const localeConfig = LOCALE_CONFIG[state.locale] || LOCALE_CONFIG[DEFAULT_LOCALE];
+
+  document.documentElement.lang = localeConfig.htmlLang;
+  document.title = t("site.title");
+
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+
+  document.querySelectorAll("[data-i18n-title]").forEach((node) => {
+    node.setAttribute("title", t(node.dataset.i18nTitle));
+  });
+
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder));
+  });
+
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((node) => {
+    node.setAttribute("aria-label", t(node.dataset.i18nAriaLabel));
+  });
+
+  updateLanguageButtons();
+  updateWindowButtons();
+  updateMagnitudeLabel();
+  updateEmptyMessage();
+  renderGlobalStatus();
+  renderMapSearchStatus();
+  updateSourceStatusText();
+  updateSourceSummary();
+  updateMapCaption();
+  updateLastUpdatedDisplay();
+
+  if (rerender && state.markerLayer) {
+    renderMetrics();
+    renderMarkers();
+    renderList();
+  }
+}
+
+function currentLocaleConfig() {
+  return LOCALE_CONFIG[state.locale] || LOCALE_CONFIG[DEFAULT_LOCALE];
+}
+
+function t(key, params = {}) {
+  const dictionary = TRANSLATIONS[state.locale] || TRANSLATIONS[DEFAULT_LOCALE];
+  const fallbackDictionary = TRANSLATIONS[DEFAULT_LOCALE];
+  const value = dictionary[key] ?? fallbackDictionary[key] ?? key;
+  return typeof value === "function" ? value(params) : value;
+}
+
+function hasTranslation(key) {
+  return (
+    Object.prototype.hasOwnProperty.call(TRANSLATIONS[state.locale] || {}, key) ||
+    Object.prototype.hasOwnProperty.call(TRANSLATIONS[DEFAULT_LOCALE], key)
+  );
+}
+
+function updateLanguageButtons() {
+  elements.languageButtons?.forEach((button) => {
+    const isActive = button.dataset.locale === state.locale;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+}
+
+function updateWindowButtons() {
+  elements.segmentButtons?.forEach((button) => {
+    button.textContent = formatWindowShortLabel(Number(button.dataset.windowHours));
+  });
+}
+
+function updateMagnitudeLabel() {
+  if (elements.magnitudeValue) {
+    elements.magnitudeValue.textContent = `M${state.filters.minMagnitude.toFixed(1)}+`;
+  }
+}
+
+function updateEmptyMessage() {
+  elements.eventList?.setAttribute("data-empty-message", t("events.empty"));
 }
 
 function initMap() {
@@ -321,6 +621,10 @@ function initControls() {
   elements.mapSearchForm?.addEventListener("submit", handleMapSearchSubmit);
   elements.mapSearchClear?.addEventListener("click", clearMapSearch);
 
+  elements.languageButtons.forEach((button) => {
+    button.addEventListener("click", () => setLanguage(button.dataset.locale));
+  });
+
   elements.segmentButtons.forEach((button) => {
     button.addEventListener("click", () => {
       state.filters.windowHours = Number(button.dataset.windowHours);
@@ -331,7 +635,7 @@ function initControls() {
 
   elements.magnitudeFilter?.addEventListener("input", () => {
     state.filters.minMagnitude = Number(elements.magnitudeFilter.value);
-    elements.magnitudeValue.textContent = `M${state.filters.minMagnitude.toFixed(1)}+`;
+    updateMagnitudeLabel();
     applyFiltersAndRender();
   });
 
@@ -354,13 +658,13 @@ async function handleMapSearchSubmit(event) {
 
   const query = elements.mapSearchInput?.value.trim();
   if (!query || query.length < 2) {
-    setMapSearchStatus("En az 2 karakter girin.", "error");
+    setMapSearchStatus("search.tooShort", "error");
     return;
   }
 
   const token = ++state.searchToken;
   setMapSearchLoading(true);
-  setMapSearchStatus("Aranıyor...", "loading");
+  setMapSearchStatus("search.loading", "loading");
 
   try {
     const place = await geocodePlace(query);
@@ -369,7 +673,7 @@ async function handleMapSearchSubmit(event) {
     }
 
     if (!place) {
-      setMapSearchStatus("Sonuç bulunamadı.", "error");
+      setMapSearchStatus("search.noResult", "error");
       return;
     }
 
@@ -379,7 +683,7 @@ async function handleMapSearchSubmit(event) {
   } catch (error) {
     console.warn("Bölge araması başarısız", error);
     if (token === state.searchToken) {
-      setMapSearchStatus("Arama şu an tamamlanamadı.", "error");
+      setMapSearchStatus("search.failed", "error");
     }
   } finally {
     if (token === state.searchToken) {
@@ -390,20 +694,21 @@ async function handleMapSearchSubmit(event) {
 
 async function geocodePlace(query) {
   const encodedQuery = encodeURIComponent(query);
+  const geocodeLanguage = currentLocaleConfig().geocodeLanguage;
   const providers = [
     async () => {
       const results = await fetchJson(
-        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&accept-language=tr&q=${encodedQuery}`
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&addressdetails=1&accept-language=${geocodeLanguage}&q=${encodedQuery}`
       );
       return normalizeNominatimPlace(asArray(results)[0]);
     },
     async () => {
-      const result = await fetchJson(`https://photon.komoot.io/api/?q=${encodedQuery}&limit=1&lang=tr`);
+      const result = await fetchJson(`https://photon.komoot.io/api/?q=${encodedQuery}&limit=1&lang=${geocodeLanguage}`);
       return normalizePhotonPlace(asArray(result?.features)[0]);
     },
     async () => {
       const result = await fetchJson(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodedQuery}&count=1&language=tr&format=json`
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodedQuery}&count=1&language=${geocodeLanguage}&format=json`
       );
       return normalizeOpenMeteoPlace(asArray(result?.results)[0]);
     },
@@ -478,13 +783,21 @@ function setMapSearchLoading(isLoading) {
   }
 }
 
-function setMapSearchStatus(message, mode) {
+function setMapSearchStatus(message, mode, params = {}) {
+  state.mapSearchStatus = { message, mode, params };
+  renderMapSearchStatus();
+}
+
+function renderMapSearchStatus() {
   if (!elements.mapSearchStatus) {
     return;
   }
 
-  elements.mapSearchStatus.textContent = message;
-  elements.mapSearchStatus.classList.toggle("is-error", mode === "error");
+  const status = state.mapSearchStatus || { message: "", params: {}, mode: "idle" };
+  elements.mapSearchStatus.textContent = hasTranslation(status.message)
+    ? t(status.message, status.params)
+    : status.message;
+  elements.mapSearchStatus.classList.toggle("is-error", status.mode === "error");
 }
 
 function handleVisibilityChange() {
@@ -505,9 +818,9 @@ async function refreshEvents(options = {}) {
 
   state.isRefreshing = true;
   elements.refreshButton?.classList.add("is-loading");
-  updateGlobalStatus("Kaynaklar güncelleniyor", "loading");
+  updateGlobalStatus("status.refreshing", "loading");
 
-  Object.keys(DATA_SOURCES).forEach((key) => updateSourceStatus(key, "Çekiliyor", 0, "loading"));
+  Object.keys(DATA_SOURCES).forEach((key) => updateSourceStatus(key, "fetching", 0, "loading"));
 
   try {
     const sourceResults = await Promise.allSettled(
@@ -516,7 +829,7 @@ async function refreshEvents(options = {}) {
     const reports = sourceResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []));
 
     if (!reports.length && !state.hasLoadedOnce) {
-      throw new Error("Kaynaklardan okunabilir deprem kaydı gelmedi.");
+      throw new Error(t("status.noReadableData"));
     }
 
     if (reports.length) {
@@ -529,14 +842,14 @@ async function refreshEvents(options = {}) {
     const liveCount = Object.keys(DATA_SOURCES).length - failedCount;
     applyFiltersAndRender();
 
-    const statusText = buildGlobalStatusText({ failedCount, liveCount });
-    updateGlobalStatus(statusText, failedCount > 0 ? "warning" : "live");
+    const statusPayload = buildGlobalStatusText({ failedCount, liveCount });
+    updateGlobalStatus(statusPayload.key, failedCount > 0 ? "warning" : "live", statusPayload.params);
     updateLastUpdated();
   } catch (error) {
     console.error(error);
-    updateGlobalStatus("Veri alınamadı, son başarılı görünüm korunuyor", "error");
+    updateGlobalStatus("status.fetchFailed", "error");
     if (options.manual) {
-      renderEmptyState("Kaynaklar şu an yanıt vermiyor.");
+      renderEmptyState(t("status.sourcesOffline"));
     }
   } finally {
     state.isRefreshing = false;
@@ -559,11 +872,11 @@ async function fetchSource(key, source) {
     }
 
     const reports = source.normalize(payloads.length === 1 ? payloads[0] : payloads).filter(isUsableReport);
-    updateSourceStatus(key, "Canlı", reports.length, "live");
+    updateSourceStatus(key, "live", reports.length, "live");
     return reports;
   } catch (error) {
     console.warn(`${source.label} okunamadı`, error);
-    updateSourceStatus(key, "Hata", 0, "error");
+    updateSourceStatus(key, "error", 0, "error");
     throw error;
   }
 }
@@ -701,7 +1014,7 @@ function normalizeAfad(text) {
       time: parseTurkeyTimestamp(item.date),
       updated: parseTurkeyTimestamp(item.lastUpdateDate),
       url: item.eventID ? `https://deprem.afad.gov.tr/event-detail/${item.eventID}` : "https://deprem.afad.gov.tr",
-      status: item.isEventUpdate ? "güncellendi" : "ilk kayıt",
+      statusKey: item.isEventUpdate ? "updated" : "initial",
       attributes: {
         il: item.province,
         ilçe: item.district,
@@ -1055,7 +1368,7 @@ function renderSourceCounts(minTime) {
 
   Object.entries(counts).forEach(([key, count]) => {
     state.sourceStats[key] = {
-      ...(state.sourceStats[key] || { status: "Hazır", mode: "idle" }),
+      ...(state.sourceStats[key] || { statusKey: "ready", mode: "idle" }),
       count,
     };
 
@@ -1079,7 +1392,7 @@ function renderMetrics() {
   elements.metricMax.textContent = maxMagnitude == null ? "-" : `M${maxMagnitude.toFixed(1)}`;
   elements.metricStrong.textContent = String(strongCount);
   elements.metricDepth.textContent = averageDepth == null ? "-" : `${averageDepth.toFixed(0)} km`;
-  elements.visibleCount.textContent = `${total} görünür`;
+  elements.visibleCount.textContent = t("events.visibleCount", { count: total });
 }
 
 function renderMarkers() {
@@ -1124,7 +1437,7 @@ function renderList() {
         <button class="event-card${isSelected}" type="button" data-event-id="${escapeHtml(event.id)}">
           <span class="mag-badge" style="background:${markerColor(event.magnitude)}">${formatMagnitude(event.magnitude, false)}</span>
           <span class="event-content">
-            <span class="event-title" title="${escapeHtml(event.place)}">${escapeHtml(localizePlaceName(event.place))}</span>
+            <span class="event-title" title="${escapeHtml(formatPlaceName(event.place))}">${escapeHtml(formatPlaceName(event.place))}</span>
             <span class="event-meta">
               <span>${formatRelativeTime(event.time)}</span>
               <span>${formatDepthRange(event)}</span>
@@ -1163,26 +1476,38 @@ function renderEmptyState(message) {
 
 function updateMapCaption() {
   const sourceCount = Object.values(state.filters.sources).filter(Boolean).length;
-  elements.mapCaption.textContent = `Son ${formatWindowLabel(state.filters.windowHours)} ${sourceCount} kaynak seçili`;
+  elements.mapCaption.textContent = t("map.caption", {
+    windowLabel: formatWindowLabel(state.filters.windowHours),
+    sourceCount,
+  });
 }
 
 function formatWindowLabel(hours) {
+  const days = Math.round(hours / 24);
   if (hours >= 72) {
-    return "3 günde";
+    return t("window.label.day", { days });
   }
 
-  return `${hours} saatte`;
+  return t("window.label.hour", { hours });
 }
 
-function updateSourceStatus(key, status, count, mode) {
+function formatWindowShortLabel(hours) {
+  if (hours >= 72) {
+    return t("window.short.day", { days: Math.round(hours / 24) });
+  }
+
+  return t("window.short.hour", { hours });
+}
+
+function updateSourceStatus(key, statusKey, count, mode) {
   state.sourceStats[key] = {
-    status,
+    statusKey,
     count,
     mode,
   };
 
   if (elements.sourceStatus[key]) {
-    elements.sourceStatus[key].textContent = status;
+    elements.sourceStatus[key].textContent = t(`sourceStatus.${statusKey}`);
   }
 
   if (elements.sourceCount[key]) {
@@ -1194,10 +1519,36 @@ function updateSourceStatus(key, status, count, mode) {
   updateSourceSummary();
 }
 
-function updateGlobalStatus(message, mode) {
-  elements.statusSummary.textContent = message;
-  elements.statusDot.classList.toggle("is-live", mode === "live");
-  elements.statusDot.classList.toggle("is-error", mode === "error");
+function updateSourceStatusText() {
+  Object.entries(state.sourceStats).forEach(([key, stats]) => {
+    const statusKey = stats.statusKey || statusKeyForMode(stats.mode);
+    if (elements.sourceStatus[key]) {
+      elements.sourceStatus[key].textContent = t(`sourceStatus.${statusKey}`);
+    }
+  });
+}
+
+function statusKeyForMode(mode) {
+  return (
+    {
+      idle: "ready",
+      loading: "fetching",
+      live: "live",
+      error: "error",
+    }[mode] || "ready"
+  );
+}
+
+function updateGlobalStatus(key, mode, params = {}) {
+  state.globalStatus = { key, mode, params };
+  renderGlobalStatus();
+}
+
+function renderGlobalStatus() {
+  const status = state.globalStatus || { key: "status.waiting", mode: "idle", params: {} };
+  elements.statusSummary.textContent = t(status.key, status.params);
+  elements.statusDot.classList.toggle("is-live", status.mode === "live");
+  elements.statusDot.classList.toggle("is-error", status.mode === "error");
 }
 
 function updateSourceSummary() {
@@ -1206,21 +1557,23 @@ function updateSourceSummary() {
   }
 
   const health = getSourceHealth();
-  const liveText = `${health.live}/${health.total} canlı`;
-  const loadingText = health.loading ? " · güncelleniyor" : "";
-  const errorText = health.error ? ` · ${health.error} hata` : "";
-  elements.sourceSummary.textContent = `${liveText}${loadingText}${errorText} · ${formatInteger(health.rawCount)} ham kayıt`;
+  elements.sourceSummary.textContent = t("sources.summary", health);
 }
 
 function buildGlobalStatusText({ failedCount, liveCount }) {
   const health = getSourceHealth();
-  const rawText = `${formatInteger(health.rawCount)} ham kayıt`;
 
   if (failedCount > 0) {
-    return `${liveCount}/${health.total} kaynak canlı · ${rawText} · ${failedCount} hata`;
+    return {
+      key: "status.sourcesWithErrors",
+      params: { liveCount, total: health.total, rawCount: health.rawCount, failedCount },
+    };
   }
 
-  return `${liveCount}/${health.total} kaynak canlı · ${rawText}`;
+  return {
+    key: "status.sourcesLive",
+    params: { liveCount, total: health.total, rawCount: health.rawCount },
+  };
 }
 
 function getSourceHealth() {
@@ -1236,12 +1589,21 @@ function getSourceHealth() {
 
 function updateLastUpdated() {
   const now = new Date();
-  elements.lastUpdated.textContent = new Intl.DateTimeFormat("tr-TR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(now);
   elements.lastUpdated.dateTime = now.toISOString();
   elements.lastUpdated.dataset.timestamp = String(now.getTime());
+  updateLastUpdatedDisplay();
+}
+
+function updateLastUpdatedDisplay() {
+  const timestamp = Number(elements.lastUpdated?.dataset.timestamp || 0);
+  if (!timestamp || !elements.lastUpdated) {
+    return;
+  }
+
+  elements.lastUpdated.textContent = new Intl.DateTimeFormat(currentLocaleConfig().dateLocale, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function popupHtml(event) {
@@ -1249,7 +1611,7 @@ function popupHtml(event) {
     .map((report) => {
       const detailRows = [
         formatMagnitude(report.magnitude, true),
-        Number.isFinite(report.depth) ? `${report.depth.toFixed(1)} km` : "Derinlik yok",
+        Number.isFinite(report.depth) ? `${report.depth.toFixed(1)} km` : t("depth.none"),
         formatDateTime(report.time),
         formatCoordinates(report.lat, report.lon),
       ];
@@ -1258,14 +1620,14 @@ function popupHtml(event) {
         <article class="report-row">
           <div class="report-row-head">
             <strong>${escapeHtml(report.source)}</strong>
-            <span>${escapeHtml(report.status || "kayıt")}</span>
+            <span>${escapeHtml(formatReportStatus(report))}</span>
           </div>
           <div class="report-metrics">
             ${detailRows.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
           </div>
-          <p class="report-place">${escapeHtml(localizePlaceName(report.place))}</p>
+          <p class="report-place">${escapeHtml(formatPlaceName(report.place))}</p>
           ${attributeHtml(report.attributes)}
-          ${report.url ? `<a class="report-link" href="${safeUrl(report.url)}" target="_blank" rel="noreferrer">Kaynak kaydı</a>` : ""}
+          ${report.url ? `<a class="report-link" href="${safeUrl(report.url)}" target="_blank" rel="noreferrer">${escapeHtml(t("popup.sourceRecord"))}</a>` : ""}
         </article>
       `;
     })
@@ -1273,17 +1635,17 @@ function popupHtml(event) {
 
   return `
     <div class="quake-popup is-rich">
-      <h3>${escapeHtml(localizePlaceName(event.place))}</h3>
+      <h3>${escapeHtml(formatPlaceName(event.place))}</h3>
       <dl class="popup-summary">
-        <dt>Büyüklük</dt><dd>${escapeHtml(formatMagnitudeRange(event))}</dd>
-        <dt>Zaman</dt><dd>${escapeHtml(formatDateTime(event.time))}</dd>
-        <dt>Derinlik</dt><dd>${escapeHtml(formatDepthRange(event))}</dd>
-        <dt>Koordinat</dt><dd>${escapeHtml(formatCoordinates(event.lat, event.lon))}</dd>
-        <dt>Kaynak</dt><dd>${escapeHtml(event.sources.join(", "))}</dd>
-        ${event.intensity ? `<dt>Şiddet</dt><dd>${escapeHtml(String(event.intensity))}</dd>` : ""}
+        <dt>${escapeHtml(t("popup.magnitude"))}</dt><dd>${escapeHtml(formatMagnitudeRange(event))}</dd>
+        <dt>${escapeHtml(t("popup.time"))}</dt><dd>${escapeHtml(formatDateTime(event.time))}</dd>
+        <dt>${escapeHtml(t("popup.depth"))}</dt><dd>${escapeHtml(formatDepthRange(event))}</dd>
+        <dt>${escapeHtml(t("popup.coordinates"))}</dt><dd>${escapeHtml(formatCoordinates(event.lat, event.lon))}</dd>
+        <dt>${escapeHtml(t("popup.source"))}</dt><dd>${escapeHtml(event.sources.join(", "))}</dd>
+        ${event.intensity ? `<dt>${escapeHtml(t("popup.intensity"))}</dt><dd>${escapeHtml(String(event.intensity))}</dd>` : ""}
       </dl>
-      ${event.tsunami ? '<p class="popup-alert">Tsunami uyarısı veya potansiyeli bildirildi</p>' : ""}
-      ${event.alertLevel ? `<p class="popup-alert muted-alert">GDACS alarm seviyesi: ${escapeHtml(event.alertLevel)}</p>` : ""}
+      ${event.tsunami ? `<p class="popup-alert">${escapeHtml(t("popup.tsunami"))}</p>` : ""}
+      ${event.alertLevel ? `<p class="popup-alert muted-alert">${escapeHtml(t("popup.gdacsAlert", { level: event.alertLevel }))}</p>` : ""}
       <div class="report-list">${reports}</div>
     </div>
   `;
@@ -1303,7 +1665,7 @@ function attributeHtml(attributes = {}) {
       ${rows
         .map(
           ([key, value]) => `
-            <dt>${escapeHtml(key)}</dt>
+            <dt>${escapeHtml(formatAttributeLabel(key))}</dt>
             <dd>${escapeHtml(String(value))}</dd>
           `
         )
@@ -1322,10 +1684,54 @@ function sourceTagHtml(sources) {
   return tags.join("");
 }
 
+function formatReportStatus(report) {
+  if (report.statusKey) {
+    return t(`reportStatus.${report.statusKey}`);
+  }
+
+  if (!report.status) {
+    return t("report.record");
+  }
+
+  const normalizedStatus = String(report.status).toLowerCase();
+  if (normalizedStatus === "güncellendi" || normalizedStatus === "updated") {
+    return t("reportStatus.updated");
+  }
+  if (normalizedStatus === "ilk kayıt" || normalizedStatus === "initial report") {
+    return t("reportStatus.initial");
+  }
+
+  return report.status;
+}
+
+function formatAttributeLabel(key) {
+  const label = ATTRIBUTE_LABELS[key];
+  return label?.[state.locale] || key;
+}
+
+function formatPlaceName(place) {
+  const text = String(place || "").replace(/\s+/g, " ").trim();
+  if (!text || text === "Konum belirtilmedi") {
+    return t("place.unknown");
+  }
+
+  if (text === "Yeni Zelanda bölgesi") {
+    return t("place.newZealandRegion");
+  }
+  if (text === "Japonya bölgesi") {
+    return t("place.japanRegion");
+  }
+  if (text === "Endonezya bölgesi") {
+    return t("place.indonesiaRegion");
+  }
+
+  return state.locale === "tr" ? localizePlaceName(text) : humanizeAllCaps(text);
+}
+
 function localizePlaceName(place) {
   const text = String(place || "").replace(/\s+/g, " ").trim();
   if (!text) {
-    return "Konum belirtilmedi";
+    return t("place.unknown");
   }
 
   const indonesianDistanceMatch = text.match(
@@ -1352,12 +1758,12 @@ function localizePlaceName(place) {
 
   const nearMatch = text.match(/^near\s+(.+)$/i);
   if (nearMatch) {
-    return `${localizeRegionName(nearMatch[1])} yakınları`;
+    return t("place.near", { place: localizeRegionName(nearMatch[1]) });
   }
 
   const offshoreMatch = text.match(/^offshore\s+(.+)$/i);
   if (offshoreMatch) {
-    return `${localizeRegionName(offshoreMatch[1])} açıkları`;
+    return t("place.offshore", { place: localizeRegionName(offshoreMatch[1]) });
   }
 
   return localizeRegionName(text);
@@ -1368,7 +1774,10 @@ function localizeRegionName(value) {
 
   const coastMatch = text.match(/^(N|S|E|W|North|South|East|West)\s+Coast\s+Of\s+(.+)$/i);
   if (coastMatch) {
-    return `${localizeRegionName(coastMatch[2])} ${localizeCoastDirection(coastMatch[1])} kıyısı`;
+    return t("place.coast", {
+      place: localizeRegionName(coastMatch[2]),
+      direction: localizeCoastDirection(coastMatch[1]),
+    });
   }
 
   text = text.replace(/\bSerambagiantimur\b/gi, "Seram Doğu Bölümü");
@@ -1443,7 +1852,7 @@ function formatMagnitude(magnitude, includeType = true) {
 }
 
 function formatInteger(value) {
-  return INTEGER_FORMATTER.format(Math.max(0, Number(value) || 0));
+  return new Intl.NumberFormat(currentLocaleConfig().dateLocale).format(Math.max(0, Number(value) || 0));
 }
 
 function formatMagnitudeRange(event) {
@@ -1460,7 +1869,7 @@ function formatMagnitudeRange(event) {
 
 function formatDepthRange(event) {
   if (!Number.isFinite(event.depthMin) || !Number.isFinite(event.depthMax)) {
-    return Number.isFinite(event.depth) ? `${event.depth.toFixed(1)} km` : "Derinlik yok";
+    return Number.isFinite(event.depth) ? `${event.depth.toFixed(1)} km` : t("depth.none");
   }
 
   if (Math.abs(event.depthMax - event.depthMin) < 0.6) {
@@ -1479,7 +1888,7 @@ function formatDateTime(timestamp) {
     return "-";
   }
 
-  return new Intl.DateTimeFormat("tr-TR", {
+  return new Intl.DateTimeFormat(currentLocaleConfig().dateLocale, {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
@@ -1496,11 +1905,11 @@ function formatRelativeTime(timestamp) {
   const diffMs = Date.now() - timestamp;
   const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
   if (diffMinutes < 60) {
-    return `${diffMinutes} dk önce`;
+    return t("time.minutesAgo", { count: diffMinutes });
   }
 
   const diffHours = Math.round(diffMinutes / 60);
-  return `${diffHours} sa önce`;
+  return t("time.hoursAgo", { count: diffHours });
 }
 
 function parseUtcTimestamp(value) {
@@ -1586,8 +1995,8 @@ function normalizeNominatimPlace(item) {
   return {
     lat,
     lon,
-    name: item.name || item.display_name?.split(",")[0] || "Arama sonucu",
-    label: item.display_name || item.name || "Arama sonucu",
+    name: item.name || item.display_name?.split(",")[0] || t("search.resultFallback"),
+    label: item.display_name || item.name || t("search.resultFallback"),
     bounds: parseNominatimBounds(item.boundingbox),
     zoom: zoomForPlace(item.type || item.class),
   };
@@ -1608,8 +2017,8 @@ function normalizePhotonPlace(feature) {
   return {
     lat: toNumber(lat),
     lon: toNumber(lon),
-    name: props.name || "Arama sonucu",
-    label: label || props.name || "Arama sonucu",
+    name: props.name || t("search.resultFallback"),
+    label: label || props.name || t("search.resultFallback"),
     bounds: parsePhotonBounds(props.extent),
     zoom: zoomForPlace(props.type),
   };
@@ -1630,8 +2039,8 @@ function normalizeOpenMeteoPlace(item) {
   return {
     lat,
     lon,
-    name: item.name || "Arama sonucu",
-    label: label || item.name || "Arama sonucu",
+    name: item.name || t("search.resultFallback"),
+    label: label || item.name || t("search.resultFallback"),
     zoom: zoomForPlace(item.feature_code),
   };
 }
