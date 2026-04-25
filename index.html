@@ -152,69 +152,75 @@
           </article>
         </section>
 
-        <section class="filters" aria-label="Filtreler" data-i18n-aria-label="filters.aria">
-          <div class="field-row">
-            <span class="field-label" data-i18n="filters.time">Zaman</span>
-            <div class="segments" role="group" aria-label="Zaman aralığı" data-i18n-aria-label="filters.timeRangeAria">
-              <button class="segment" type="button" data-window-hours="1">1 sa</button>
-              <button class="segment" type="button" data-window-hours="6">6 sa</button>
-              <button class="segment is-active" type="button" data-window-hours="24">
-                24 sa
-              </button>
-              <button class="segment" type="button" data-window-hours="72">3 gün</button>
-              <button class="segment" type="button" data-window-hours="168">7 gün</button>
+        <details class="filters" id="filter-details" aria-label="Filtreler" data-i18n-aria-label="filters.aria" open>
+          <summary class="filter-summary-row">
+            <span data-i18n="filters.aria">Filtreler</span>
+            <strong id="filter-summary">24 sa · M0.0+ · 8 kaynak</strong>
+          </summary>
+          <div class="filter-body">
+            <div class="field-row">
+              <span class="field-label" data-i18n="filters.time">Zaman</span>
+              <div class="segments" role="group" aria-label="Zaman aralığı" data-i18n-aria-label="filters.timeRangeAria">
+                <button class="segment" type="button" data-window-hours="1">1 sa</button>
+                <button class="segment" type="button" data-window-hours="6">6 sa</button>
+                <button class="segment is-active" type="button" data-window-hours="24">
+                  24 sa
+                </button>
+                <button class="segment" type="button" data-window-hours="72">3 gün</button>
+                <button class="segment" type="button" data-window-hours="168">7 gün</button>
+              </div>
+            </div>
+
+            <label class="range-field" for="magnitude-filter">
+              <span class="field-label" data-i18n="filters.minMagnitude">Minimum büyüklük</span>
+              <output id="magnitude-value" for="magnitude-filter">M0.0+</output>
+              <input
+                id="magnitude-filter"
+                type="range"
+                min="0"
+                max="7"
+                step="0.5"
+                value="0"
+              />
+            </label>
+
+            <div class="field-row source-switches" aria-label="Kaynak filtresi" data-i18n-aria-label="filters.sourceAria">
+              <span class="field-label" data-i18n="filters.source">Kaynak</span>
+              <label class="toggle-pill">
+                <input type="checkbox" value="usgs" checked />
+                <span>USGS</span>
+              </label>
+              <label class="toggle-pill">
+                <input type="checkbox" value="emsc" checked />
+                <span>EMSC</span>
+              </label>
+              <label class="toggle-pill">
+                <input type="checkbox" value="gdacs" checked />
+                <span>GDACS</span>
+              </label>
+              <label class="toggle-pill">
+                <input type="checkbox" value="afad" checked />
+                <span>AFAD</span>
+              </label>
+              <label class="toggle-pill">
+                <input type="checkbox" value="kandilli" checked />
+                <span>Kandilli</span>
+              </label>
+              <label class="toggle-pill">
+                <input type="checkbox" value="geonet" checked />
+                <span>GeoNet</span>
+              </label>
+              <label class="toggle-pill">
+                <input type="checkbox" value="jma" checked />
+                <span>JMA</span>
+              </label>
+              <label class="toggle-pill">
+                <input type="checkbox" value="bmkg" checked />
+                <span>BMKG</span>
+              </label>
             </div>
           </div>
-
-          <label class="range-field" for="magnitude-filter">
-            <span class="field-label" data-i18n="filters.minMagnitude">Minimum büyüklük</span>
-            <output id="magnitude-value" for="magnitude-filter">M0.0+</output>
-            <input
-              id="magnitude-filter"
-              type="range"
-              min="0"
-              max="7"
-              step="0.5"
-              value="0"
-            />
-          </label>
-
-          <div class="field-row source-switches" aria-label="Kaynak filtresi" data-i18n-aria-label="filters.sourceAria">
-            <span class="field-label" data-i18n="filters.source">Kaynak</span>
-            <label class="toggle-pill">
-              <input type="checkbox" value="usgs" checked />
-              <span>USGS</span>
-            </label>
-            <label class="toggle-pill">
-              <input type="checkbox" value="emsc" checked />
-              <span>EMSC</span>
-            </label>
-            <label class="toggle-pill">
-              <input type="checkbox" value="gdacs" checked />
-              <span>GDACS</span>
-            </label>
-            <label class="toggle-pill">
-              <input type="checkbox" value="afad" checked />
-              <span>AFAD</span>
-            </label>
-            <label class="toggle-pill">
-              <input type="checkbox" value="kandilli" checked />
-              <span>Kandilli</span>
-            </label>
-            <label class="toggle-pill">
-              <input type="checkbox" value="geonet" checked />
-              <span>GeoNet</span>
-            </label>
-            <label class="toggle-pill">
-              <input type="checkbox" value="jma" checked />
-              <span>JMA</span>
-            </label>
-            <label class="toggle-pill">
-              <input type="checkbox" value="bmkg" checked />
-              <span>BMKG</span>
-            </label>
-          </div>
-        </section>
+        </details>
 
         <section class="event-section" aria-label="Deprem olayları" data-i18n-aria-label="events.aria">
           <div class="section-title">

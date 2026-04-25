@@ -272,7 +272,7 @@ h2 {
 
 .source-details summary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   min-height: 42px;
@@ -311,10 +311,12 @@ h2 {
 }
 
 #source-summary {
+  min-width: 0;
   overflow: hidden;
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 780;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -380,13 +382,21 @@ h2 {
 }
 
 .filters {
-  display: grid;
-  gap: 14px;
   min-width: 0;
   padding: 14px;
   background: var(--soft);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.filter-summary-row {
+  display: none;
+}
+
+.filter-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 .field-row,
@@ -934,7 +944,7 @@ h2 {
 
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(360px, 46vh) minmax(0, 1fr);
+    grid-template-rows: minmax(230px, 34vh) minmax(0, 1fr);
     height: 100vh;
     max-width: 100vw;
     overflow: hidden;
@@ -969,6 +979,66 @@ h2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .filters {
+    padding: 0;
+    background: var(--panel-strong);
+  }
+
+  .filter-summary-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 42px;
+    padding: 10px 12px;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .filter-summary-row::-webkit-details-marker {
+    display: none;
+  }
+
+  .filter-summary-row::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg);
+    transition: transform 0.16s ease;
+  }
+
+  .filters[open] .filter-summary-row::after {
+    transform: rotate(225deg);
+  }
+
+  .filter-summary-row:focus-visible {
+    outline: none;
+    box-shadow: var(--focus);
+  }
+
+  .filter-summary-row span {
+    color: var(--text);
+    font-size: 0.88rem;
+    font-weight: 850;
+  }
+
+  #filter-summary {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 780;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .filter-body {
+    padding: 0 12px 12px;
+  }
+
   .event-section {
     min-height: 150px;
   }
@@ -989,19 +1059,19 @@ h2 {
   }
 
   .control-panel {
-    gap: 12px;
-    padding: 14px;
+    gap: 9px;
+    padding: 12px;
   }
 
   .panel-header {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
     gap: 8px;
   }
 
   .brand-lockup {
-    flex: 1 1 auto;
-    gap: 10px;
+    gap: 8px;
   }
 
   .brand-lockup > div {
@@ -1009,57 +1079,73 @@ h2 {
   }
 
   h1 {
-    font-size: 1.42rem;
+    font-size: 1.34rem;
     line-height: 1.06;
   }
 
   .header-actions {
     gap: 6px;
     justify-content: flex-end;
-    width: 100%;
+    width: auto;
   }
 
   .brand-mark {
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
   }
 
   .icon-button {
-    width: 38px;
-    height: 38px;
+    width: 36px;
+    height: 36px;
   }
 
   .language-switch {
-    grid-template-columns: repeat(2, minmax(30px, 1fr));
-    min-height: 38px;
+    grid-template-columns: repeat(2, minmax(28px, 1fr));
+    min-height: 36px;
     padding: 2px;
   }
 
   .lang-button {
-    min-width: 30px;
-    padding: 0 6px;
+    min-width: 28px;
+    padding: 0 5px;
     font-size: 0.72rem;
   }
 
-  .status-band,
   .field-row {
     align-items: stretch;
     flex-direction: column;
   }
 
   .status-band {
-    gap: 6px;
-    min-height: 70px;
-    justify-content: flex-start;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 10px;
   }
 
   #last-updated {
     align-self: flex-start;
   }
 
-  .source-grid,
   .metric-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .source-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric {
+    padding: 8px 7px;
+  }
+
+  .metric span {
+    font-size: 0.68rem;
+  }
+
+  .metric strong {
+    margin-top: 4px;
+    font-size: 1rem;
   }
 
   .source-tile {
@@ -1069,12 +1155,13 @@ h2 {
 
   .segments {
     width: 100%;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .segment {
     min-width: 0;
     padding-inline: 4px;
+    font-size: 0.76rem;
   }
 
   .range-field {

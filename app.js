@@ -7,6 +7,7 @@ const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
 const DEFAULT_LOCALE = "tr";
 const SUPPORTED_LOCALES = ["tr", "en"];
 const LOCALE_STORAGE_KEY = "earthquake-map-locale";
+const MOBILE_LAYOUT_QUERY = "(max-width: 780px)";
 const LOCALE_CONFIG = {
   tr: {
     htmlLang: "tr",
@@ -58,6 +59,8 @@ const TRANSLATIONS = {
     "filters.minMagnitude": "Minimum büyüklük",
     "filters.source": "Kaynak",
     "filters.sourceAria": "Kaynak filtresi",
+    "filters.summary": ({ windowLabel, minMagnitude, sourceCount }) =>
+      `${windowLabel} · M${minMagnitude.toFixed(1)}+ · ${sourceCount} kaynak`,
     "events.aria": "Deprem olayları",
     "events.feed": "Olay Akışı",
     "events.visibleCount": ({ count }) => `${count} görünür`,
@@ -138,6 +141,8 @@ const TRANSLATIONS = {
     "filters.minMagnitude": "Minimum magnitude",
     "filters.source": "Source",
     "filters.sourceAria": "Source filter",
+    "filters.summary": ({ windowLabel, minMagnitude, sourceCount }) =>
+      `${windowLabel} · M${minMagnitude.toFixed(1)}+ · ${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`,
     "events.aria": "Earthquake events",
     "events.feed": "Event Feed",
     "events.visibleCount": ({ count }) => `${count} visible`,
@@ -458,6 +463,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initLanguage();
   initMap();
   initControls();
+  initResponsiveLayout();
   applyLanguage({ rerender: false });
   createIcons();
   refreshEvents();
@@ -475,6 +481,9 @@ function collectElements() {
   elements.metricMax = document.getElementById("metric-max");
   elements.metricStrong = document.getElementById("metric-strong");
   elements.metricDepth = document.getElementById("metric-depth");
+  elements.sourceDetails = document.getElementById("source-details");
+  elements.filterDetails = document.getElementById("filter-details");
+  elements.filterSummary = document.getElementById("filter-summary");
   elements.magnitudeFilter = document.getElementById("magnitude-filter");
   elements.magnitudeValue = document.getElementById("magnitude-value");
   elements.visibleCount = document.getElementById("visible-count");
@@ -540,6 +549,7 @@ function applyLanguage(options = {}) {
   updateLanguageButtons();
   updateWindowButtons();
   updateMagnitudeLabel();
+  updateFilterSummary();
   updateEmptyMessage();
   renderGlobalStatus();
   renderMapSearchStatus();
@@ -590,6 +600,17 @@ function updateWindowButtons() {
 function updateMagnitudeLabel() {
   if (elements.magnitudeValue) {
     elements.magnitudeValue.textContent = `M${state.filters.minMagnitude.toFixed(1)}+`;
+  }
+}
+
+function updateFilterSummary() {
+  const sourceCount = Object.values(state.filters.sources).filter(Boolean).length;
+  if (elements.filterSummary) {
+    elements.filterSummary.textContent = t("filters.summary", {
+      windowLabel: formatWindowShortLabel(state.filters.windowHours),
+      minMagnitude: state.filters.minMagnitude,
+      sourceCount,
+    });
   }
 }
 
@@ -644,6 +665,50 @@ function initControls() {
       state.filters.sources[input.value] = input.checked;
       applyFiltersAndRender();
     });
+  });
+}
+
+function initResponsiveLayout() {
+  const mediaQuery = window.matchMedia(MOBILE_LAYOUT_QUERY);
+  const handleChange = () => {
+    syncResponsiveDetails(mediaQuery.matches);
+    scheduleMapResize();
+  };
+
+  syncResponsiveDetails(mediaQuery.matches);
+  window.setTimeout(handleChange, 250);
+
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", handleChange);
+  } else if (typeof mediaQuery.addListener === "function") {
+    mediaQuery.addListener(handleChange);
+  }
+
+  elements.filterDetails?.addEventListener("toggle", scheduleMapResize);
+  elements.sourceDetails?.addEventListener("toggle", scheduleMapResize);
+  window.addEventListener("pageshow", () => window.setTimeout(handleChange, 0));
+  window.addEventListener("resize", scheduleMapResize);
+  window.addEventListener("orientationchange", scheduleMapResize);
+}
+
+function syncResponsiveDetails(isMobile) {
+  if (elements.filterDetails) {
+    elements.filterDetails.open = !isMobile;
+  }
+
+  if (isMobile && elements.sourceDetails) {
+    elements.sourceDetails.open = false;
+  }
+}
+
+function scheduleMapResize() {
+  if (!state.map) {
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    state.map.invalidateSize({ animate: false });
+    window.setTimeout(() => state.map?.invalidateSize({ animate: false }), 180);
   });
 }
 
@@ -1341,6 +1406,7 @@ function isUsableReport(report) {
 
 function applyFiltersAndRender() {
   const minTime = Date.now() - state.filters.windowHours * 60 * 60 * 1000;
+  updateFilterSummary();
   state.filteredEvents = state.events
     .filter((event) => {
       const matchesWindow = event.time >= minTime;
@@ -1546,9 +1612,24 @@ function updateGlobalStatus(key, mode, params = {}) {
 
 function renderGlobalStatus() {
   const status = state.globalStatus || { key: "status.waiting", mode: "idle", params: {} };
-  elements.statusSummary.textContent = t(status.key, status.params);
+  elements.statusSummary.textContent = t(status.key, getGlobalStatusParams(status));
   elements.statusDot.classList.toggle("is-live", status.mode === "live");
   elements.statusDot.classList.toggle("is-error", status.mode === "error");
+}
+
+function getGlobalStatusParams(status) {
+  if (status.key !== "status.sourcesLive" && status.key !== "status.sourcesWithErrors") {
+    return status.params;
+  }
+
+  const health = getSourceHealth();
+  return {
+    ...status.params,
+    liveCount: health.live,
+    total: health.total,
+    rawCount: health.rawCount,
+    failedCount: health.error,
+  };
 }
 
 function updateSourceSummary() {
@@ -1558,6 +1639,7 @@ function updateSourceSummary() {
 
   const health = getSourceHealth();
   elements.sourceSummary.textContent = t("sources.summary", health);
+  renderGlobalStatus();
 }
 
 function buildGlobalStatusText({ failedCount, liveCount }) {
