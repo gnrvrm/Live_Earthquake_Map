@@ -931,6 +931,55 @@ h2 {
   text-align: center;
 }
 
+.embed-page {
+  min-height: 100vh;
+  background: transparent;
+}
+
+.embed-page .app-shell {
+  display: block;
+  height: 100vh;
+  min-height: 220px;
+}
+
+.embed-page .map-stage {
+  height: 100vh;
+  min-height: 220px;
+}
+
+.embed-page .map-search {
+  top: 12px;
+  right: 12px;
+  width: min(360px, calc(100vw - 24px));
+}
+
+.embed-page .top-left {
+  top: 12px;
+  left: 12px;
+  max-width: min(360px, calc(100vw - 24px));
+}
+
+.embed-status {
+  left: 12px;
+  bottom: 12px;
+  max-width: min(520px, calc(100vw - 24px));
+}
+
+.embed-status #status-summary {
+  max-width: min(360px, calc(100vw - 168px));
+}
+
+.embed-status #last-updated:empty {
+  display: none;
+}
+
+.embed-hide-search .map-search,
+.embed-hide-legend .legend,
+.embed-hide-caption .embed-caption,
+.embed-hide-status .embed-status {
+  display: none;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

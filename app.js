@@ -14,6 +14,9 @@ const DEFAULT_LOCALE = "tr";
 const SUPPORTED_LOCALES = ["tr", "en"];
 const LOCALE_STORAGE_KEY = "earthquake-map-locale";
 const MOBILE_LAYOUT_QUERY = "(max-width: 780px)";
+const EMBED_COMMAND_TYPE = "earthquake-map:command";
+const EMBED_RESPONSE_TYPE = "earthquake-map:response";
+const EMBED_EVENT_TYPE = "earthquake-map:event";
 const LOCALE_CONFIG = {
   tr: {
     htmlLang: "tr",
@@ -438,6 +441,8 @@ const DATA_SOURCES = {
 };
 
 const state = {
+  mode: "app",
+  runtimeOptions: null,
   locale: DEFAULT_LOCALE,
   map: null,
   markerLayer: null,
@@ -468,13 +473,17 @@ const elements = {};
 
 document.addEventListener("DOMContentLoaded", () => {
   collectElements();
+  initRuntimeOptions();
   initLanguage();
   initMap();
   initControls();
   initResponsiveLayout();
   applyLanguage({ rerender: false });
+  syncFilterControls();
   createIcons();
   loadAppVersion();
+  initEmbedBridge();
+  postEmbedEvent("ready", getPublicState());
   refreshEvents();
   window.setInterval(refreshEvents, REFRESH_INTERVAL_MS);
   document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -518,7 +527,36 @@ function collectElements() {
   });
 }
 
+function initRuntimeOptions() {
+  const options = parseRuntimeOptions();
+  state.runtimeOptions = options;
+  state.mode = options.mode;
+
+  document.documentElement.dataset.appMode = state.mode;
+  document.body?.classList.toggle("embed-page", state.mode === "embed");
+  document.body?.classList.toggle("embed-hide-search", options.showSearch === false);
+  document.body?.classList.toggle("embed-hide-legend", options.showLegend === false);
+  document.body?.classList.toggle("embed-hide-caption", options.showCaption === false);
+  document.body?.classList.toggle("embed-hide-status", options.showStatus === false);
+
+  if (Number.isFinite(options.windowHours)) {
+    state.filters.windowHours = options.windowHours;
+  }
+  if (Number.isFinite(options.minMagnitude)) {
+    state.filters.minMagnitude = options.minMagnitude;
+  }
+  if (options.sources) {
+    state.filters.sources = normalizeSourceSelection(options.sources, false);
+  }
+}
+
 function initLanguage() {
+  const requestedLocale = normalizeLocale(state.runtimeOptions?.locale);
+  if (requestedLocale) {
+    state.locale = requestedLocale;
+    return;
+  }
+
   const savedLocale = window.localStorage?.getItem(LOCALE_STORAGE_KEY);
   state.locale = SUPPORTED_LOCALES.includes(savedLocale) ? savedLocale : DEFAULT_LOCALE;
 }
@@ -529,8 +567,11 @@ function setLanguage(locale) {
   }
 
   state.locale = locale;
-  window.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
+  if (state.mode !== "embed") {
+    window.localStorage?.setItem(LOCALE_STORAGE_KEY, locale);
+  }
   applyLanguage();
+  postEmbedEvent("language", getPublicState());
 }
 
 function applyLanguage(options = {}) {
@@ -601,7 +642,9 @@ function updateLanguageButtons() {
 
 function updateWindowButtons() {
   elements.segmentButtons?.forEach((button) => {
-    button.textContent = formatWindowShortLabel(Number(button.dataset.windowHours));
+    const windowHours = Number(button.dataset.windowHours);
+    button.textContent = formatWindowShortLabel(windowHours);
+    button.classList.toggle("is-active", windowHours === state.filters.windowHours);
   });
 }
 
@@ -626,13 +669,216 @@ function updateEmptyMessage() {
   elements.eventList?.setAttribute("data-empty-message", t("events.empty"));
 }
 
+function syncFilterControls() {
+  elements.segmentButtons?.forEach((button) => {
+    button.classList.toggle("is-active", Number(button.dataset.windowHours) === state.filters.windowHours);
+  });
+
+  if (elements.magnitudeFilter) {
+    elements.magnitudeFilter.value = String(state.filters.minMagnitude);
+  }
+
+  elements.sourceInputs?.forEach((input) => {
+    input.checked = Boolean(state.filters.sources[input.value]);
+  });
+
+  updateMagnitudeLabel();
+  updateFilterSummary();
+}
+
+async function setFilters(filters = {}, options = {}) {
+  const windowHours = normalizeWindowHours(filters.windowHours ?? filters.window ?? filters.hours);
+  const minMagnitude = normalizeMagnitude(filters.minMagnitude ?? filters.minMag ?? filters.magnitude);
+
+  if (Number.isFinite(windowHours)) {
+    state.filters.windowHours = windowHours;
+  }
+  if (Number.isFinite(minMagnitude)) {
+    state.filters.minMagnitude = minMagnitude;
+  }
+  if (filters.sources !== undefined) {
+    state.filters.sources = normalizeSourceSelection(filters.sources, state.filters.sources);
+  }
+
+  syncFilterControls();
+
+  if (options.render !== false && state.markerLayer) {
+    await applyFiltersAndRender({ chunked: options.chunked !== false });
+  }
+
+  postEmbedEvent("filters", getPublicState());
+  return getPublicState();
+}
+
+function parseRuntimeOptions() {
+  const params = new URLSearchParams(window.location.search);
+  const mode = document.documentElement.dataset.appMode || params.get("mode") || params.get("view") || "app";
+  const center = parseCenterParams(params);
+  const bounds = parseBoundsValue(params.get("bbox") || params.get("bounds"));
+
+  return {
+    mode: mode === "embed" ? "embed" : "app",
+    locale: normalizeLocale(params.get("lang") || params.get("locale")),
+    windowHours: normalizeWindowHours(params.get("window") || params.get("windowHours") || params.get("hours")),
+    minMagnitude: normalizeMagnitude(params.get("minMag") || params.get("minMagnitude") || params.get("magnitude")),
+    sources: parseSourcesParam(params.get("sources")),
+    center,
+    bounds,
+    zoom: normalizeZoom(params.get("zoom")),
+    showSearch: parseBooleanParam(params.get("search"), true),
+    showLegend: parseBooleanParam(params.get("legend"), true),
+    showCaption: parseBooleanParam(params.get("caption"), true),
+    showStatus: parseBooleanParam(params.get("status"), true),
+  };
+}
+
+function parseCenterParams(params) {
+  const lat = toNumber(params.get("lat"));
+  const lon = toNumber(params.get("lon") || params.get("lng"));
+  if (Number.isFinite(lat) && Number.isFinite(lon) && isValidLatLon(lat, lon)) {
+    return [lat, lon];
+  }
+
+  const center = String(params.get("center") || "")
+    .split(",")
+    .map((item) => toNumber(item.trim()));
+  if (center.length === 2 && isValidLatLon(center[0], center[1])) {
+    return center;
+  }
+
+  return null;
+}
+
+function parseSourcesParam(value) {
+  if (!value) {
+    return null;
+  }
+
+  return String(value)
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function normalizeSourceSelection(value, fallback = state.filters.sources) {
+  const validKeys = Object.keys(DATA_SOURCES);
+  const base =
+    fallback && typeof fallback === "object"
+      ? Object.fromEntries(validKeys.map((key) => [key, Boolean(fallback[key])]))
+      : Object.fromEntries(validKeys.map((key) => [key, Boolean(fallback)]));
+
+  if (typeof value === "string" || Array.isArray(value)) {
+    const selected = (typeof value === "string" ? parseSourcesParam(value) : value) || [];
+    const selectedKeys = selected.map((item) => String(item).toLowerCase());
+    return Object.fromEntries(validKeys.map((key) => [key, selectedKeys.includes(key)]));
+  }
+
+  if (value && typeof value === "object") {
+    validKeys.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        base[key] = Boolean(value[key]);
+      }
+    });
+  }
+
+  return base;
+}
+
+function normalizeLocale(value) {
+  const locale = String(value || "").toLowerCase();
+  return SUPPORTED_LOCALES.includes(locale) ? locale : null;
+}
+
+function normalizeWindowHours(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(1, Math.min(MAX_HISTORY_HOURS, Math.round(parsed)));
+}
+
+function normalizeMagnitude(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(0, Math.min(9.9, Math.round(parsed * 10) / 10));
+}
+
+function normalizeZoom(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.max(2, Math.min(12, Math.round(parsed)));
+}
+
+function parseBooleanParam(value, fallback) {
+  if (value == null || value === "") {
+    return fallback;
+  }
+
+  const normalized = String(value).toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function parseBoundsValue(value) {
+  if (!value) {
+    return null;
+  }
+
+  const [west, south, east, north] = String(value)
+    .split(",")
+    .map((item) => toNumber(item.trim()));
+
+  if ([west, south, east, north].every(Number.isFinite) && isValidBounds({ west, south, east, north })) {
+    return { west, south, east, north };
+  }
+
+  return null;
+}
+
+function isValidBounds(bounds) {
+  return (
+    bounds &&
+    bounds.west >= -180 &&
+    bounds.east <= 180 &&
+    bounds.south >= -90 &&
+    bounds.north <= 90 &&
+    bounds.south < bounds.north &&
+    bounds.west < bounds.east
+  );
+}
+
+function isValidLatLon(lat, lon) {
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+}
+
 function initMap() {
   state.markerRenderer = L.canvas({ padding: 0.5 });
   state.map = L.map("map", {
     zoomControl: false,
     preferCanvas: true,
     worldCopyJump: true,
-  }).setView([22, 12], 2);
+  });
 
   L.control.zoom({ position: "bottomleft" }).addTo(state.map);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
@@ -645,6 +891,15 @@ function initMap() {
   }).addTo(state.map);
 
   state.markerLayer = L.layerGroup().addTo(state.map);
+
+  const initialBounds = state.runtimeOptions?.bounds;
+  const initialCenter = state.runtimeOptions?.center || [22, 12];
+  const initialZoom = state.runtimeOptions?.zoom ?? 2;
+  if (initialBounds) {
+    fitMapToBounds(initialBounds, { animate: false, padding: [28, 28] });
+  } else {
+    state.map.setView(initialCenter, initialZoom, { animate: false });
+  }
 }
 
 function initControls() {
@@ -658,22 +913,17 @@ function initControls() {
 
   elements.segmentButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      state.filters.windowHours = Number(button.dataset.windowHours);
-      elements.segmentButtons.forEach((item) => item.classList.toggle("is-active", item === button));
-      void applyFiltersAndRender();
+      void setFilters({ windowHours: Number(button.dataset.windowHours) });
     });
   });
 
   elements.magnitudeFilter?.addEventListener("input", () => {
-    state.filters.minMagnitude = Number(elements.magnitudeFilter.value);
-    updateMagnitudeLabel();
-    void applyFiltersAndRender();
+    void setFilters({ minMagnitude: Number(elements.magnitudeFilter.value) });
   });
 
   elements.sourceInputs.forEach((input) => {
     input.addEventListener("change", () => {
-      state.filters.sources[input.value] = input.checked;
-      void applyFiltersAndRender();
+      void setFilters({ sources: { [input.value]: input.checked } });
     });
   });
 }
@@ -898,7 +1148,9 @@ function focusSearchResult(place) {
 
 function clearMapSearch() {
   state.searchToken += 1;
-  elements.mapSearchInput.value = "";
+  if (elements.mapSearchInput) {
+    elements.mapSearchInput.value = "";
+  }
   elements.mapSearchClear?.classList.add("is-hidden");
   setMapSearchStatus("", "idle");
   setMapSearchLoading(false);
@@ -945,6 +1197,322 @@ function handleVisibilityChange() {
   }
 }
 
+function initEmbedBridge() {
+  if (state.mode !== "embed") {
+    return;
+  }
+
+  window.addEventListener("message", handleEmbedMessage);
+}
+
+function handleEmbedMessage(event) {
+  const message = event.data;
+  if (!message || message.type !== EMBED_COMMAND_TYPE) {
+    return;
+  }
+
+  const reply = (payload) => {
+    event.source?.postMessage(payload, event.origin === "null" ? "*" : event.origin);
+  };
+
+  Promise.resolve(handleEmbedCommand(message.command, message.payload || {}))
+    .then((data) => {
+      reply({
+        type: EMBED_RESPONSE_TYPE,
+        id: message.id,
+        ok: true,
+        data,
+      });
+    })
+    .catch((error) => {
+      reply({
+        type: EMBED_RESPONSE_TYPE,
+        id: message.id,
+        ok: false,
+        error: error.message || String(error),
+      });
+    });
+}
+
+async function handleEmbedCommand(command, payload = {}) {
+  switch (command) {
+    case "setView":
+      return setMapView(payload);
+    case "fitBounds":
+      return fitMapToBounds(readBoundsPayload(payload), payload);
+    case "setFilters":
+      return setFilters(payload);
+    case "refresh":
+      await refreshEvents({ manual: true });
+      return getPublicState();
+    case "getEvents":
+      return getPublicEvents(payload);
+    case "getState":
+      return getPublicState();
+    case "search":
+      return searchFromEmbed(payload);
+    case "openEvent":
+      return openEventFromEmbed(payload);
+    default:
+      throw new Error(`Unknown command: ${command}`);
+  }
+}
+
+function setMapView(payload = {}) {
+  const center = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload.center)
+      ? payload.center
+      : [payload.lat, payload.lon ?? payload.lng];
+  const lat = toNumber(center[0]);
+  const lon = toNumber(center[1]);
+  const zoom = normalizeZoom(payload.zoom) ?? state.map.getZoom();
+
+  if (!isValidLatLon(lat, lon)) {
+    throw new Error("setView requires a valid lat/lon pair.");
+  }
+
+  state.map.setView([lat, lon], zoom, { animate: payload.animate === true });
+  scheduleMapResize();
+  return getPublicState();
+}
+
+function fitMapToBounds(bounds, options = {}) {
+  if (!isValidBounds(bounds)) {
+    throw new Error("fitBounds requires a valid bbox: west,south,east,north.");
+  }
+
+  state.map.fitBounds(
+    [
+      [bounds.south, bounds.west],
+      [bounds.north, bounds.east],
+    ],
+    {
+      animate: options.animate === true,
+      padding: options.padding || [32, 32],
+      maxZoom: normalizeZoom(options.maxZoom) || undefined,
+    }
+  );
+  scheduleMapResize();
+  return getPublicState();
+}
+
+function readBoundsPayload(payload = {}) {
+  if (Array.isArray(payload)) {
+    return parseBoundsValue(payload.join(","));
+  }
+
+  if (payload.bbox || payload.bounds) {
+    const value = Array.isArray(payload.bbox || payload.bounds)
+      ? (payload.bbox || payload.bounds).join(",")
+      : payload.bbox || payload.bounds;
+    return parseBoundsValue(value);
+  }
+
+  const bounds = {
+    west: toNumber(payload.west),
+    south: toNumber(payload.south),
+    east: toNumber(payload.east),
+    north: toNumber(payload.north),
+  };
+  return isValidBounds(bounds) ? bounds : null;
+}
+
+async function searchFromEmbed(payload = {}) {
+  const query = String(payload.query || "").trim();
+  if (query.length < 2) {
+    throw new Error("search requires at least 2 characters.");
+  }
+
+  const place = await geocodePlace(query);
+  if (!place) {
+    throw new Error("No search result found.");
+  }
+
+  focusSearchResult(place);
+  return {
+    lat: place.lat,
+    lon: place.lon,
+    name: place.name,
+    label: place.label,
+    bounds: place.bounds,
+    zoom: place.zoom,
+  };
+}
+
+function openEventFromEmbed(payload = {}) {
+  const event =
+    state.events.find((item) => item.id === payload.id) ||
+    state.filteredEvents.find((item) => item.id === payload.id);
+  if (!event) {
+    throw new Error("Event not found.");
+  }
+
+  state.selectedId = event.id;
+  state.map.setView([event.lat, event.lon], Math.max(state.map.getZoom(), 4), {
+    animate: payload.animate !== false,
+  });
+  state.markerRefs.get(event.id)?.openPopup();
+  renderList();
+  const serialized = serializeEvent(event, { includeReports: true });
+  postEmbedEvent("eventClick", { event: serialized });
+  return serialized;
+}
+
+function getPublicState() {
+  const center = state.map?.getCenter();
+  const bounds = state.map?.getBounds();
+  return {
+    mode: state.mode,
+    locale: state.locale,
+    filters: {
+      windowHours: state.filters.windowHours,
+      minMagnitude: state.filters.minMagnitude,
+      sources: { ...state.filters.sources },
+    },
+    status: {
+      key: state.globalStatus?.key,
+      mode: state.globalStatus?.mode,
+      text: state.globalStatus ? t(state.globalStatus.key, getGlobalStatusParams(state.globalStatus)) : "",
+    },
+    counts: {
+      reports: state.reports.length,
+      events: state.events.length,
+      visible: state.filteredEvents.length,
+    },
+    selectedId: state.selectedId,
+    map: center
+      ? {
+          center: { lat: center.lat, lon: center.lng },
+          zoom: state.map.getZoom(),
+          bbox: bounds
+            ? {
+                west: bounds.getWest(),
+                south: bounds.getSouth(),
+                east: bounds.getEast(),
+                north: bounds.getNorth(),
+              }
+            : null,
+        }
+      : null,
+    sources: Object.fromEntries(
+      Object.entries(state.sourceStats).map(([key, value]) => [
+        key,
+        {
+          status: value.statusKey || statusKeyForMode(value.mode),
+          mode: value.mode,
+          count: value.count,
+        },
+      ])
+    ),
+    lastUpdated: elements.lastUpdated?.dateTime || null,
+  };
+}
+
+function getPublicEvents(options = {}) {
+  const limit = Math.max(1, Math.min(1000, Number(options.limit) || 100));
+  const events = options.all ? state.events : state.filteredEvents;
+  return events
+    .filter((event) => matchesPublicEventQuery(event, options))
+    .slice(0, limit)
+    .map((event) => serializeEvent(event, { includeReports: Boolean(options.includeReports) }));
+}
+
+function matchesPublicEventQuery(event, options = {}) {
+  const bounds = readBoundsPayload(options);
+  if (bounds && !isEventInBounds(event, bounds)) {
+    return false;
+  }
+
+  const radiusKm = Number(options.radiusKm);
+  const center = Array.isArray(options.center) ? options.center : [options.lat, options.lon ?? options.lng];
+  const lat = toNumber(center[0]);
+  const lon = toNumber(center[1]);
+  if (
+    Number.isFinite(radiusKm) &&
+    isValidLatLon(lat, lon) &&
+    distanceKm(lat, lon, event.lat, event.lon) > radiusKm
+  ) {
+    return false;
+  }
+
+  const minMagnitude = normalizeMagnitude(options.minMagnitude ?? options.minMag);
+  if (Number.isFinite(minMagnitude) && event.magnitude < minMagnitude) {
+    return false;
+  }
+
+  return true;
+}
+
+function isEventInBounds(event, bounds) {
+  return event.lon >= bounds.west && event.lon <= bounds.east && event.lat >= bounds.south && event.lat <= bounds.north;
+}
+
+function serializeEvent(event, options = {}) {
+  return {
+    id: event.id,
+    magnitude: event.magnitude,
+    magnitudeMin: event.magnitudeMin,
+    magnitudeMax: event.magnitudeMax,
+    depth: event.depth,
+    depthMin: event.depthMin,
+    depthMax: event.depthMax,
+    lat: event.lat,
+    lon: event.lon,
+    place: formatPlaceName(event.place),
+    rawPlace: event.place,
+    time: Number.isFinite(event.time) ? new Date(event.time).toISOString() : null,
+    timestamp: event.time,
+    updated: Number.isFinite(event.updated) ? new Date(event.updated).toISOString() : null,
+    sources: [...event.sources],
+    sourceKeys: [...event.sourceKeys],
+    sourceCount: event.sourceKeys.length,
+    tsunami: Boolean(event.tsunami),
+    alertLevel: event.alertLevel || null,
+    intensity: event.intensity || null,
+    url: event.reports?.find((report) => report.url)?.url || null,
+    reports: options.includeReports ? event.reports.map(serializeReport) : undefined,
+  };
+}
+
+function serializeReport(report) {
+  return {
+    sourceKey: report.sourceKey,
+    source: report.source,
+    sourceId: report.sourceId,
+    magnitude: report.magnitude,
+    magnitudeType: report.magnitudeType || null,
+    depth: report.depth,
+    lat: report.lat,
+    lon: report.lon,
+    place: formatPlaceName(report.place),
+    rawPlace: report.place,
+    time: Number.isFinite(report.time) ? new Date(report.time).toISOString() : null,
+    timestamp: report.time,
+    updated: Number.isFinite(report.updated) ? new Date(report.updated).toISOString() : null,
+    url: report.url || null,
+    tsunami: Boolean(report.tsunami),
+    alertLevel: report.alertLevel || null,
+    intensity: report.intensity || null,
+    attributes: { ...(report.attributes || {}) },
+  };
+}
+
+function postEmbedEvent(event, data = {}) {
+  if (state.mode !== "embed" || window.parent === window) {
+    return;
+  }
+
+  window.parent.postMessage(
+    {
+      type: EMBED_EVENT_TYPE,
+      event,
+      data,
+    },
+    "*"
+  );
+}
+
 async function refreshEvents(options = {}) {
   if (state.isRefreshing) {
     return;
@@ -980,9 +1548,14 @@ async function refreshEvents(options = {}) {
     const statusPayload = buildGlobalStatusText({ failedCount, liveCount });
     updateGlobalStatus(statusPayload.key, failedCount > 0 ? "warning" : "live", statusPayload.params);
     updateLastUpdated();
+    postEmbedEvent("data", {
+      state: getPublicState(),
+      events: getPublicEvents({ limit: 50 }),
+    });
   } catch (error) {
     console.error(error);
     updateGlobalStatus("status.fetchFailed", "error");
+    postEmbedEvent("error", { message: error.message || String(error) });
     if (options.manual) {
       renderEmptyState(t("status.sourcesOffline"));
     }
@@ -1618,11 +2191,21 @@ function renderMetrics() {
   const strongCount = state.filteredEvents.filter((event) => event.magnitude >= 4.5).length;
   const averageDepth = depths.length ? depths.reduce((sum, value) => sum + value, 0) / depths.length : null;
 
-  elements.metricTotal.textContent = String(total);
-  elements.metricMax.textContent = maxMagnitude == null ? "-" : `M${maxMagnitude.toFixed(1)}`;
-  elements.metricStrong.textContent = String(strongCount);
-  elements.metricDepth.textContent = averageDepth == null ? "-" : `${averageDepth.toFixed(0)} km`;
-  elements.visibleCount.textContent = t("events.visibleCount", { count: total });
+  if (elements.metricTotal) {
+    elements.metricTotal.textContent = String(total);
+  }
+  if (elements.metricMax) {
+    elements.metricMax.textContent = maxMagnitude == null ? "-" : `M${maxMagnitude.toFixed(1)}`;
+  }
+  if (elements.metricStrong) {
+    elements.metricStrong.textContent = String(strongCount);
+  }
+  if (elements.metricDepth) {
+    elements.metricDepth.textContent = averageDepth == null ? "-" : `${averageDepth.toFixed(0)} km`;
+  }
+  if (elements.visibleCount) {
+    elements.visibleCount.textContent = t("events.visibleCount", { count: total });
+  }
 }
 
 async function renderMarkers(options = {}) {
@@ -1654,6 +2237,7 @@ async function renderMarkers(options = {}) {
     marker.on("click", () => {
       state.selectedId = event.id;
       renderList();
+      postEmbedEvent("eventClick", { event: serializeEvent(event, { includeReports: true }) });
     });
     marker.addTo(state.markerLayer);
     state.markerRefs.set(event.id, marker);
@@ -1707,6 +2291,7 @@ function renderList() {
       });
       marker?.openPopup();
       renderList();
+      postEmbedEvent("eventClick", { event: serializeEvent(event, { includeReports: true }) });
     });
   });
 }
@@ -1718,6 +2303,10 @@ function renderEmptyState(message) {
 }
 
 function updateMapCaption() {
+  if (!elements.mapCaption) {
+    return;
+  }
+
   const sourceCount = Object.values(state.filters.sources).filter(Boolean).length;
   elements.mapCaption.textContent = t("map.caption", {
     windowLabel: formatWindowLabel(state.filters.windowHours),
@@ -1788,6 +2377,10 @@ function updateGlobalStatus(key, mode, params = {}) {
 }
 
 function renderGlobalStatus() {
+  if (!elements.statusSummary || !elements.statusDot) {
+    return;
+  }
+
   const status = state.globalStatus || { key: "status.waiting", mode: "idle", params: {} };
   elements.statusSummary.textContent = t(status.key, getGlobalStatusParams(status));
   elements.statusDot.classList.toggle("is-live", status.mode === "live");
@@ -1847,6 +2440,10 @@ function getSourceHealth() {
 }
 
 function updateLastUpdated() {
+  if (!elements.lastUpdated) {
+    return;
+  }
+
   const now = new Date();
   elements.lastUpdated.dateTime = now.toISOString();
   elements.lastUpdated.dataset.timestamp = String(now.getTime());

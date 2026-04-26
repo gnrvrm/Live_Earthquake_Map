@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="tr" data-app-mode="embed">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Earthquake Map Embed</title>
+    <link rel="icon" href="data:," />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script defer src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body class="embed-page">
+    <div class="app-shell embed-shell">
+      <main class="map-stage">
+        <div id="map" aria-label="World earthquake map" data-i18n-aria-label="map.aria"></div>
+
+        <div class="map-overlay top-left embed-caption">
+          <span id="map-caption">Live earthquake events</span>
+        </div>
+
+        <form id="map-search" class="map-search" role="search" aria-label="Search a region on the map" data-i18n-aria-label="search.aria">
+          <div class="map-search-row">
+            <i data-lucide="search" aria-hidden="true"></i>
+            <input
+              id="map-search-input"
+              type="search"
+              autocomplete="off"
+              placeholder="Search region"
+              aria-label="Search region"
+              data-i18n-placeholder="search.placeholder"
+              data-i18n-aria-label="search.placeholder"
+            />
+            <button id="map-search-submit" class="search-icon-button" type="submit" title="Search" data-i18n-title="search.submit">
+              <i data-lucide="arrow-right"></i>
+              <span class="sr-only" data-i18n="search.submit">Search</span>
+            </button>
+            <button
+              id="map-search-clear"
+              class="search-icon-button is-hidden"
+              type="button"
+              title="Clear"
+              data-i18n-title="search.clear"
+            >
+              <i data-lucide="x"></i>
+              <span class="sr-only" data-i18n="search.clear">Clear</span>
+            </button>
+          </div>
+          <p id="map-search-status" class="map-search-status" aria-live="polite"></p>
+        </form>
+
+        <div class="map-overlay legend" aria-label="Magnitude legend" data-i18n-aria-label="legend.aria">
+          <span><i class="legend-dot mag-low"></i>M0-2.9</span>
+          <span><i class="legend-dot mag-mid"></i>M3-4.4</span>
+          <span><i class="legend-dot mag-high"></i>M4.5-5.9</span>
+          <span><i class="legend-dot mag-extreme"></i>M6+</span>
+        </div>
+
+        <div class="map-overlay embed-status" aria-live="polite">
+          <span class="status-dot" id="global-status-dot"></span>
+          <span id="status-summary">Waiting for data</span>
+          <time id="last-updated" datetime=""></time>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
